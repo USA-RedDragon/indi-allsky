@@ -133,5 +133,6 @@ exec gunicorn \
     --timeout 180 \
     --umask 0022 \
     --log-level info \
+    --disable-redirect-access-to-syslog \
     indi_allsky.wsgi
 

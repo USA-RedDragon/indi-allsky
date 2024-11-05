@@ -6,3 +6,7 @@ virtualenv
 #virtualenv/**/*
 log
 #log/**/*
+Docker/Dockerfile*
+.dockerignore
+.git/
+.gitignore

@@ -2,34 +2,24 @@
 # docker- prefix due to files in docker/ folder
 FROM ghcr.io/usa-reddragon/indi.allsky.base:main
 
-ARG DEBIAN_FRONTEND=noninteractive
-
 USER root
-RUN apt-get update
-RUN apt-get -y upgrade
-
 
 # redirect /dev/log to /dev/null
 RUN ln -s /dev/null /dev/log
 
-
 RUN mkdir -m 750 /var/lib/indi-allsky
 RUN chown -R allsky:allsky /var/lib/indi-allsky
-
 
 COPY docker/start_indi_allsky.sh /home/allsky
 RUN chown allsky:allsky /home/allsky/start_indi_allsky.sh
 RUN chmod 755 /home/allsky/start_indi_allsky.sh
-
 
 # installs latest code
 RUN mkdir /home/allsky/indi-allsky
 COPY . /home/allsky/indi-allsky
 RUN chown -R allsky:allsky /home/allsky/indi-allsky
 
-
 USER allsky
 WORKDIR /home/allsky
-
 
 ENTRYPOINT ["./start_indi_allsky.sh"]

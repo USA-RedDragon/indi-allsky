@@ -15,7 +15,6 @@ RUN export DEBIAN_FRONTEND=noninteractive \
       --no-install-recommends \
       --no-install-suggests \
         intel-media-va-driver-non-free \
-        i965-va-driver \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN <<_DOCKER_EOF_

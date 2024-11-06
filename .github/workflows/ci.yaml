@@ -32,7 +32,7 @@ jobs:
       trivy: false
       dockerfile: docker/Dockerfile.indi_base_debian12
       image-name: ${{ needs.lowercase-user.outputs.user }}/indi.base
-      platforms: 'linux/amd64'
+      platforms: 'linux/amd64,linux/arm64'
 
   docker-allskybase:
     needs: [ lowercase-user, docker-base ]
@@ -46,7 +46,7 @@ jobs:
       trivy: false
       dockerfile: docker/Dockerfile.indi_allsky_base_debian12
       image-name: ${{ needs.lowercase-user.outputs.user }}/indi.allsky.base
-      platforms: 'linux/amd64'
+      platforms: 'linux/amd64,linux/arm64'
 
   docker:
     needs: [ docker-allskybase, lowercase-user ]
@@ -70,4 +70,4 @@ jobs:
       trivy: false
       dockerfile: docker/${{ matrix.dockerfile }}
       image-name: ${{ needs.lowercase-user.outputs.user }}/${{ matrix.image }}
-      platforms: 'linux/amd64'
+      platforms: 'linux/amd64,linux/arm64'

@@ -31,7 +31,7 @@ class boto3_s3(GenericFileTransfer):
         access_key = kwargs['access_key']
         secret_key = kwargs['secret_key']
         region = kwargs['region']
-        #host = kwargs['hostname']  # endpoint_url
+        host = kwargs['hostname']
         tls = kwargs['tls']
         cert_bypass = kwargs['cert_bypass']
 
@@ -53,7 +53,7 @@ class boto3_s3(GenericFileTransfer):
             region,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            #endpoint_url='http://foobar',
+            endpoint_url=f'https://{host}',
             use_ssl=tls,
             verify=verify,
             config=boto_config,

@@ -1,4 +1,4 @@
-FROM ghcr.io/usa-reddragon/indi-base:v2.1.0@sha256:366c4c7687780f5f6a6602fc423f733791df29c6fd75ddfb9beecf30724c417e
+FROM ghcr.io/usa-reddragon/indi-base:v2.1.0@sha256:e1fb91dcad106b99048c01b193c11eb766a7ee3e0e56dbaffcb7387bb63c0dea
 
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \
@@ -6,7 +6,6 @@ RUN export DEBIAN_FRONTEND=noninteractive \
       --no-install-recommends \
       --no-install-suggests \
       iputils-ping \
-      ffmpeg \
       iproute2 \
       bind9-host \
       locales \

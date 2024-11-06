@@ -2,8 +2,7 @@
 # docker- prefix due to files in docker/ folder
 FROM ghcr.io/usa-reddragon/indi.base:main
 
-COPY docker/start_indiserver.sh /home/allsky
-RUN chown allsky:allsky /home/allsky/start_indiserver.sh
+COPY --chown=allsky:allsky docker/start_indiserver.sh /home/allsky
 RUN chmod 755 /home/allsky/start_indiserver.sh
 
 ENTRYPOINT ["./start_indiserver.sh"]

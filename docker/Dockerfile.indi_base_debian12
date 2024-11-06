@@ -6,6 +6,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
       --no-install-recommends \
       --no-install-suggests \
       iputils-ping \
+      ffmpeg \
       iproute2 \
       bind9-host \
       locales \

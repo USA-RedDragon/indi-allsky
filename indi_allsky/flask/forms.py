@@ -2697,6 +2697,7 @@ class IndiAllskyConfigForm(FlaskForm):
     FFMPEG_CODEC_choices = (
         ('libx264', 'x264'),
         ('libvpx', 'webm')
+        ('h264_qsv', 'h264 (QSV)'),
     )
 
     ORB_PROPERTIES__MODE_choices = (

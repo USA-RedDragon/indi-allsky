@@ -1,4 +1,4 @@
-FROM ghcr.io/usa-reddragon/indi-base:v2.1.0@sha256:e1fb91dcad106b99048c01b193c11eb766a7ee3e0e56dbaffcb7387bb63c0dea
+FROM ghcr.io/usa-reddragon/indi-base:v2.1.0@sha256:5b9f412fc765fbfb176c553c15c266017b7e3ff97237c07a2faf60cb9b58fd07
 
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \

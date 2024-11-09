@@ -1,0 +1,43 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lowercase-user:
+    runs-on: ubuntu-22.04
+    outputs:
+      user: ${{ steps.lowercase-username.outputs.user }}
+    steps:
+      - name: Lowercase username
+        id: lowercase-username
+        run: echo "user=${OWNER,,}" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+  docker:
+    needs: [ lowercase-user ]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: gunicorn.indi.allsky
+            dockerfile: Dockerfile.gunicorn
+          - image: capture.indi.allsky
+            dockerfile: Dockerfile.capture
+    uses: USA-RedDragon/reusable-actions/.github/workflows/docker-ci.yaml@v1.2.5
+    with:
+      push: ${{ github.event_name != 'pull_request' }}
+      trivy: false
+      dockerfile: docker/${{ matrix.dockerfile }}
+      image-name: ${{ needs.lowercase-user.outputs.user }}/${{ matrix.image }}
+      platforms: 'linux/amd64,linux/arm64'

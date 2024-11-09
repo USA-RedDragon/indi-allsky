@@ -39,11 +39,8 @@ services:
   indi.allsky.base:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.indi_allsky_base_debian12
-      #dockerfile: docker/Dockerfile.indi_allsky_base_ubuntu2204
+      dockerfile: docker/Dockerfile.indi_allsky_base
     env_file: .env
-    depends_on:
-      - indi.base
     volumes:
       - images_indi_allsky:/var/www/html/allsky
 

@@ -35,6 +35,20 @@ jobs:
       platforms: 'linux/amd64,linux/arm64'
 
   docker-allskybase:
+    needs: [ lowercase-user ]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    uses: USA-RedDragon/reusable-actions/.github/workflows/docker-ci.yaml@v1.3.0
+    with:
+      push: ${{ github.event_name != 'pull_request' }}
+      trivy: false
+      dockerfile: docker/Dockerfile.indi_allsky_base
+      image-name: ${{ needs.lowercase-user.outputs.user }}/indi.allsky.base
+      platforms: 'linux/amd64,linux/arm64'
+
+  docker-indiserver:
     needs: [ lowercase-user, docker-base ]
     permissions:
       contents: read
@@ -44,11 +58,11 @@ jobs:
     with:
       push: ${{ github.event_name != 'pull_request' }}
       trivy: false
-      dockerfile: docker/Dockerfile.indi_allsky_base_debian12
-      image-name: ${{ needs.lowercase-user.outputs.user }}/indi.allsky.base
+      dockerfile: docker/Dockerfile.indiserver_debian12
+      image-name: ${{ needs.lowercase-user.outputs.user }}/indiserver.indi.allsky
       platforms: 'linux/amd64,linux/arm64'
 
-  docker:
+  docker-capture-gunicorn:
     needs: [ docker-allskybase, lowercase-user ]
     permissions:
       contents: read
@@ -58,8 +72,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: indiserver.indi.allsky
-            dockerfile: Dockerfile.indiserver_debian12
           - image: gunicorn.indi.allsky
             dockerfile: Dockerfile.gunicorn
           - image: capture.indi.allsky

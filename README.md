@@ -6,6 +6,10 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
 
 
 ## New Features
+* Real-Time Keogram
+    * A keogram is generated in realtime with every image that is taken
+* Long Term Keogram
+    * Automates the generation of Keograms that could span months or years
 * Moon Overlay
     * Realtime accurate representation of illumination of the moon
 * Satellite Tracking
@@ -16,6 +20,9 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
 * Weather API
     * OpenWeather Map API
     * Weather Underground API
+    * Astrospheric API
+    * Ambient Weather API
+    * Ecowitt API
 * Native Fan controller support
     * Standard
     * PWM Controlled
@@ -28,14 +35,20 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
     * BMP180
     * BME280 (i2c & SPI)
     * BME680 (i2c & SPI)
+    * BMP3xx (i2c & SPI)
     * Si7021
     * SHT3x
     * SHT40/41/45
+    * HTU21D
+    * HTU31D
     * AHT10/20
+    * HDC302x
     * LM35 via ADS1x15 ADC
     * TMP36 via ADS1x15 ADC
     * MLX90614 Sky Temperature
     * MLX90640 Thermal Camera
+    * SCD-30
+    * SCD-40/41
 * Light (Lux) Sensors
     * TSL2561
     * TSL2591
@@ -48,6 +61,7 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
     * Subscribe to topics as sensor input
 * Mechanical focuser support
     * 28BYJ-48 Stepper
+    * A4988 with NEMA17 Stepper
 * Use star metrics (in addition to ADU) for star trails generation
 * Generate thumbnails to reduce load time in Timelapse view
 * Panorama timelapse generation
@@ -62,7 +76,7 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
 * RAW data is the default and preferred input
     * INDI - 16-bit FITS data
     * libcamera - 16-bit DNG data
-    * Also supports 8-bit RGB, PNG, and JPEG input
+    * Also supports 8-bit RGB (RGB24), PNG, and JPEG input
 * Multiple camera vendor support
     * ZWO
     * Svbony
@@ -76,6 +90,7 @@ indi-allsky is software used to manage a Linux-based All Sky Camera using the IN
         * IMX378
         * Camera Module v3 (IMX708)
         * AI Camera (IMX500)
+        * IMX678 Darksee
         * IMX283 Klarity/OneInchEye
         * IMX519
         * IMX462
@@ -140,26 +155,29 @@ https://github.com/aaronwmorris/indi-allsky/wiki/FAQ
 | Distribution                   | Arch           | Note |
 | ------------------------------ | -------------- | ---- |
 | **Raspberry Pi OS 12 (bookworm)**  | **aarch64 (64-bit)** | **RECOMMENDED**<br>Compile INDI with build_indi.sh<br>Use libcamera or [indi_pylibcamera](https://github.com/scriptorron/indi_pylibcamera) for Raspberry PI HQ camera |
-| Raspberry Pi OS 12             | armhf (32-bit) | (DO NOT USE) WARNING: Currently has package dependency problems, please use 64-bit |
+| Raspberry Pi OS 12             | armhf (32-bit) | (NOT RECOMMENDED) Some python modules do not have armhf wheels and must be compiled from source.  This will take a few hours. |
 | Raspberry Pi OS 11 (bullseye)  | aarch64/armhf  | Compile INDI with build_indi.sh |
-| Raspberry Pi OS 10 (buster)    | armhf          | (NOT RECOMMENDED) Compile INDI with build_indi.sh |
-| Debian 12 (bookworm)           | x86_64         | Compile INDI with build_indi.sh |
+| Raspberry Pi OS 10 (buster)    | armhf          | (DO NOT USE) |
+| **Debian 12 (bookworm)**       | **x86_64**     | **RECOMMENDED**<br>Compile INDI with build_indi.sh |
 | Debian 11 (bullseye)           | x86_64         | Compile INDI with build_indi.sh |
-| Debian 10 (buster)             | x86_64         | (NOT RECOMMENDED) Compile INDI with build_indi.sh |
-| Ubuntu 24.04 (noble)           |                | Requires INDI 2.0.8 or newer for pyindi-client<br>INDI installed from ppa:mutlaqja/ppa<br>Compile libcamera with build_libcamera.sh<br>Python 3.11 installed from ppa:deadsnakes/ppa (due to problems with Python 3.12 and pyindi-client) |
+| Debian 10 (buster)             | x86_64         | (DO NOT USE) |
+| Ubuntu 24.04 (noble)           |                | Requires INDI 2.0.8 or newer for pyindi-client<br>INDI installed from ppa:mutlaqja/ppa<br>Compile libcamera with build_libcamera.sh |
 | Ubuntu 22.04 (focal)           | aarch64        | INDI installed from ppa:mutlaqja/ppa |
 | Ubuntu 22.04                   | armhf          | Compile INDI with build_indi.sh |
 | Ubuntu 22.04                   | x86_64         | INDI installed from ppa:mutlaqja/ppa |
-| Ubuntu 20.04 (bionic)          | x86_64         | INDI installed from ppa:mutlaqja/ppa |
-| Ubuntu 20.04                   | aarch64        | Compile INDI with build_indi.sh |
+| Ubuntu 20.04 (bionic)          | x86_64         | (NOT RECOMMENDED) INDI installed from ppa:mutlaqja/ppa |
+| Ubuntu 20.04                   | aarch64        | (NOT RECOMMENDED) Compile INDI with build_indi.sh |
 | Armbian                        | aarch64/armhf  | Compile INDI with build_indi.sh<br>https://github.com/aaronwmorris/indi-allsky/wiki/Armbian-Tuning |
+| Stellarmate 1.8.x              | x86_64/aarch64 | INDI pre-installed |
 | ~~Astroberry Server 2.0~~      | armhf          | (DO NOT USE) The Astroberry appears to be abandoned and is no longer supported with indi-allsky |
 
 
 ## INDI support
 | Version         | Note |
 | --------------- | ---- |
-| v2.1.0          | **Recommended** |
+| v2.1.2          |      |
+| v2.1.1          | **Recommended** |
+| v2.1.0          |      |
 | v2.0.9          |      |
 | v2.0.8          | Minimum for Ubuntu 24.04 (pyindi-client) |
 | v2.0.7          | Minimum for ASI676MC |
@@ -192,6 +210,7 @@ Memory requirements are primarily driven by the resolution of the timelapse gene
 
 | Output Resolution  | Recommended Memory | Minimum Memory        | FFMPEG Process Memory |
 | ------------------ | ------------------ | --------------------- | --------------------- |
+| 852 x 480 (0.4MP)  | 1GB                | <1GB with swap        | 0.2GB                 |
 | 1280 x 960 (1.2MP) | 2GB                | 1GB with 1GB swap     | 0.4GB                 |
 | 1920 x 1080 (2MP)  | 2GB                | 1GB with 1GB swap     | 0.6GB                 |
 | 3840 x 2160 (8MP)  | 4GB                | 2GB with 1GB swap     | 1.7GB                 |
@@ -286,12 +305,14 @@ Smoke data is updated every 3 hours from NOAA.  Smoke data is also published wit
 *Note: Data is only available for **North America**.*
 
 
-## Aurora & Kp-index
+## Aurora, Kp-index, and Solar Wind
 indi-allsky utilizes data from [NOAA Space Weather Prediction Center](https://www.swpc.noaa.gov/) to predict the possibility of Aurora in your location.  The SWPC provides data using the Ovation Aurora Model for aurora predictions.  indi-allsky uses the Ovation data to create an aggregate score within a ~500 mile radius around your location.
 
 The current Kp-index value is also polled from NOAA.  This is the measurement of the disturbance of the Earth's magnetic field, ranging from 0-9.  Values higher than 5 are good indicators of stronger solor storm activity which creates aurora.
 
 The Kp-index data, combined with the Ovation data, gives an objective prediction of the visibility of Aurora for your location.
+
+Also available are Magnetic field Bt, Bz, Hemispheric power, and Solar Wind speed and density data.
 
 Aurora data is updated every 60 minutes from NOAA.  Aurora data is also published with the MQTT data.
 
@@ -416,7 +437,7 @@ https://github.com/aaronwmorris/indi-allsky/wiki/Fan-Control
 
 ## Focuser support
 
-If you built your system with a focuser, it is now possible to control the focuser within the Focus view.  `28BYJ-48` steppers are currently supported.
+If you built your system with a focuser, it is now possible to control the focuser within the Focus view.  `28BYJ-48` and `NEMA17` steppers are currently supported.
 
 https://github.com/aaronwmorris/indi-allsky/wiki/Focuser-Device
 

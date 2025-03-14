@@ -53,10 +53,19 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : image_entry.createDate,
             'ts'           : image_entry.createDate,  # shortcut
-            'ext'          : self.config['IMAGE_FILE_TYPE'],
-            'camera_uuid'  : image_entry.camera.uuid,
             'day_date'     : image_entry.dayDate,
+            'ext'          : Path(image_entry.filename).suffix.replace('.', ''),
+            'camera_uuid'  : image_entry.camera.uuid,
+            'camera_id'    : image_entry.camera.id,
         }
+
+
+        if image_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
@@ -89,7 +98,7 @@ class miscUpload(object):
     def upload_video(self, video_entry):
         ### Upload video
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_VIDEO'):
-            logger.warning('Video uploading disabled')
+            #logger.warning('Video uploading disabled')
             return
 
 
@@ -99,15 +108,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : video_entry.dayDate,
+            'ext'          : Path(video_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : video_entry.camera.uuid,
+            'camera_id'    : video_entry.camera.id,
         }
+
+
+        if video_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_VIDEO_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_VIDEO_NAME'].format(**file_data_dict)
 
-        video_file_p = Path(video_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(video_file_p.name)
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
+
 
         # tell worker to upload file
         jobdata = {
@@ -131,7 +152,7 @@ class miscUpload(object):
     def upload_mini_video(self, video_entry):
         ### Upload video
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_MINI_VIDEO'):
-            logger.warning('Video uploading disabled')
+            #logger.warning('Video uploading disabled')
             return
 
 
@@ -141,15 +162,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : video_entry.dayDate,
+            'ext'          : Path(video_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : video_entry.camera.uuid,
+            'camera_id'    : video_entry.camera.id,
         }
+
+
+        if video_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_MINI_VIDEO_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_MINI_VIDEO_NAME'].format(**file_data_dict)
 
-        video_file_p = Path(video_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(video_file_p.name)
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
+
 
         # tell worker to upload file
         jobdata = {
@@ -173,7 +206,7 @@ class miscUpload(object):
     def upload_panorama_video(self, video_entry):
         ### Upload video
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_PANORAMA_VIDEO'):
-            logger.warning('Video uploading disabled')
+            #logger.warning('Video uploading disabled')
             return
 
 
@@ -183,15 +216,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : video_entry.dayDate,
+            'ext'          : Path(video_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : video_entry.camera.uuid,
+            'camera_id'    : video_entry.camera.id,
         }
+
+
+        if video_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_PANORAMA_VIDEO_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_PANORAMA_VIDEO_NAME'].format(**file_data_dict)
 
-        video_file_p = Path(video_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(video_file_p.name)
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
+
 
         # tell worker to upload file
         jobdata = {
@@ -215,7 +260,7 @@ class miscUpload(object):
     def upload_keogram(self, keogram_entry):
         ### Upload video
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_KEOGRAM'):
-            logger.warning('Keogram uploading disabled')
+            #logger.warning('Keogram uploading disabled')
             return
 
 
@@ -225,16 +270,26 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : keogram_entry.dayDate,
+            'ext'          : Path(keogram_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : keogram_entry.camera.uuid,
+            'camera_id'    : keogram_entry.camera.id,
         }
+
+
+        if keogram_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_KEOGRAM_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_KEOGRAM_NAME'].format(**file_data_dict)
 
-
-        keogram_file_p = Path(keogram_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(keogram_file_p.name)
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
 
 
         # tell worker to upload file
@@ -258,7 +313,7 @@ class miscUpload(object):
 
     def upload_startrail(self, startrail_entry):
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_STARTRAIL'):
-            logger.warning('Star trail uploading disabled')
+            #logger.warning('Star trail uploading disabled')
             return
 
 
@@ -268,16 +323,26 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : startrail_entry.dayDate,
+            'ext'          : Path(startrail_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : startrail_entry.camera.uuid,
+            'camera_id'    : startrail_entry.camera.id,
         }
+
+
+        if startrail_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_STARTRAIL_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_STARTRAIL_NAME'].format(**file_data_dict)
 
-
-        startrail_file_p = Path(startrail_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(startrail_file_p.name)
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
 
 
         # tell worker to upload file
@@ -302,7 +367,7 @@ class miscUpload(object):
     def upload_startrail_video(self, startrail_video_entry):
         ### Upload video
         if not self.config.get('FILETRANSFER', {}).get('UPLOAD_STARTRAIL_VIDEO'):
-            logger.warning('Startrail video uploading disabled')
+            #logger.warning('Startrail video uploading disabled')
             return
 
 
@@ -312,16 +377,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : startrail_video_entry.dayDate,
+            'ext'          : Path(startrail_video_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : startrail_video_entry.camera.uuid,
+            'camera_id'    : startrail_video_entry.camera.id,
         }
+
+
+        if startrail_video_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_STARTRAIL_VIDEO_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_STARTRAIL_VIDEO_NAME'].format(**file_data_dict)
 
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
 
-        startrail_video_file_p = Path(startrail_video_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(startrail_video_file_p.name)
 
         # tell worker to upload file
         jobdata = {
@@ -365,19 +441,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : panorama_entry.createDate,
             'ts'           : panorama_entry.createDate,  # shortcut
-            'ext'          : self.config['IMAGE_FILE_TYPE'],
-            'camera_uuid'  : panorama_entry.camera.uuid,
             'day_date'     : panorama_entry.dayDate,
+            'ext'          : Path(panorama_entry.filename).suffix.replace('.', ''),
+            'camera_uuid'  : panorama_entry.camera.uuid,
+            'camera_id'    : panorama_entry.camera.id,
         }
 
+
+        if panorama_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_PANORAMA_FOLDER'].format(**file_data_dict)
         remote_file = self.config['FILETRANSFER']['REMOTE_PANORAMA_NAME'].format(*file_data_list, **file_data_dict)
 
-
         remote_file_p = Path(remote_dir).joinpath(remote_file)
+
 
         # tell worker to upload file
         jobdata = {
@@ -411,16 +495,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : raw_image_entry.dayDate,
+            'ext'          : Path(raw_image_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : raw_image_entry.camera.uuid,
+            'camera_id'    : raw_image_entry.camera.id,
         }
+
+
+        if raw_image_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_RAW_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_RAW_NAME'].format(**file_data_dict)
 
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
 
-        raw_image_file_p = Path(raw_image_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(raw_image_file_p.name)
 
         # tell worker to upload file
         jobdata = {
@@ -454,16 +549,27 @@ class miscUpload(object):
         file_data_dict = {
             'timestamp'    : now,
             'ts'           : now,  # shortcut
+            'day_date'     : fits_image_entry.dayDate,
+            'ext'          : Path(fits_image_entry.filename).suffix.replace('.', ''),
             'camera_uuid'  : fits_image_entry.camera.uuid,
+            'camera_id'    : fits_image_entry.camera.id,
         }
+
+
+        if fits_image_entry.night:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'  # shortcut
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'  # shortcut
 
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_FITS_FOLDER'].format(**file_data_dict)
+        remote_file = self.config['FILETRANSFER']['REMOTE_FITS_NAME'].format(**file_data_dict)
 
+        remote_file_p = Path(remote_dir).joinpath(remote_file)
 
-        raw_image_file_p = Path(fits_image_entry.getFilesystemPath())
-        remote_file_p = Path(remote_dir).joinpath(raw_image_file_p.name)
 
         # tell worker to upload file
         jobdata = {

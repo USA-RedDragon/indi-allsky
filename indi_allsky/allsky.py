@@ -62,7 +62,7 @@ class IndiAllSky(object):
 
     periodic_tasks_offset = 300         # 5 minutes
     cleanup_tasks_offset = 43200        # 12 hours
-    aurora_tasks_offset = 3600          # 60 minutes
+    aurora_tasks_offset = 1800          # 30 minutes
     smoke_tasks_offset = 10800          # 3 hours
     sat_data_tasks_offset = 259200      # 3 days
 
@@ -123,7 +123,7 @@ class IndiAllSky(object):
         ])
 
 
-        ### temperature values in this array should always be in Celcius
+        ### temperature values in this array should always be in Celsius
         # 0 ccd temp
         # 1-9 reserved for future use
         # 10-29 system temperatures
@@ -814,6 +814,7 @@ class IndiAllSky(object):
 
             video_dict = {
                 'filename'   : str(f.relative_to(self.image_dir)),
+                'success'    : True,
                 'createDate' : d_createDate,
                 'dayDate'    : d_dayDate,
                 'dayDate_year'  : d_dayDate.year,
@@ -873,6 +874,7 @@ class IndiAllSky(object):
 
             keogram_dict = {
                 'filename'   : str(f.relative_to(self.image_dir)),
+                'success'    : True,
                 'createDate' : d_createDate,
                 'dayDate'    : d_dayDate,
                 'night'      : night,
@@ -923,6 +925,7 @@ class IndiAllSky(object):
 
             startrail_dict = {
                 'filename'   : str(f.relative_to(self.image_dir)),
+                'success'    : True,
                 'createDate' : d_createDate,
                 'dayDate'    : d_dayDate,
                 'night'      : night,
@@ -974,6 +977,7 @@ class IndiAllSky(object):
 
             startrail_video_dict = {
                 'filename'   : str(f.relative_to(self.image_dir)),
+                'success'    : True,
                 'createDate' : d_createDate,
                 'dayDate'    : d_dayDate,
                 'night'      : night,
@@ -1025,6 +1029,7 @@ class IndiAllSky(object):
 
             panorama_video_dict = {
                 'filename'   : str(f.relative_to(self.image_dir)),
+                'success'    : True,
                 'createDate' : d_createDate,
                 'dayDate'    : d_dayDate,
                 'night'      : night,
@@ -1220,7 +1225,7 @@ class IndiAllSky(object):
 
 
     def _queueManualTasks(self):
-        logger.info('Checking for manually submitted tasks')
+        #logger.info('Checking for manually submitted tasks')
         manual_tasks = IndiAllSkyDbTaskQueueTable.query\
             .filter(IndiAllSkyDbTaskQueueTable.state == TaskQueueState.MANUAL)\
             .filter(

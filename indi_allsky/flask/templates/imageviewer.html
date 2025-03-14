@@ -50,9 +50,9 @@ function setResizeHandler(callback, timeout) {
 }
 
 function resize_callback() {
-    //refresh();
+    //img.src = fields['IMG_SELECT'].input.val();
 }
-setResizeHandler(resize_callback, 500);
+setResizeHandler(resize_callback, 200);
 
 
 function goFullscreen(elem) {
@@ -598,6 +598,10 @@ function init() {
         var hRatio = canvas.width  / this.width;
         var vRatio =  canvas.height / this.height;
         var ratio  = Math.min ( hRatio, vRatio );
+
+        //canvas.width = this.width * ratio;
+        //canvas.height = this.height * ratio;
+
         var centerShift_x = ( canvas.width - this.width * ratio ) / 2;
         var centerShift_y = ( canvas.height - this.height * ratio ) / 2;
 

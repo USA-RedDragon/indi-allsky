@@ -222,7 +222,7 @@ class BaseView(View):
         data = {}
 
         if not self.local_indi_allsky:
-            data['status'] = '<span class="text-muted">REMOTE</span>'
+            data['status'] = '<span class="text-secondary">REMOTE</span>'
             return data
 
 
@@ -332,6 +332,7 @@ class BaseView(View):
         longitude = self.camera.longitude
         latitude = self.camera.latitude
         elevation = self.camera.elevation
+        camera_utc_offset = self.camera.utc_offset
 
         # this can be eventually removed
         if isinstance(elevation, type(None)):
@@ -402,6 +403,7 @@ class BaseView(View):
             self.night = False
         else:
             data['mode'] = 'Night'
+            self.night = True
 
 
 
@@ -424,32 +426,139 @@ class BaseView(View):
         moon_cycle_percent = (sm_angle / math.tau) * 100
         data['moon_cycle_percent'] = moon_cycle_percent
 
+
+        # html glyphs for moon phases
+        moon_glyphs_waxing = ['&#127761;', '&#127762;', '&#127763;', '&#127764;', '&#127765;']
+        moon_glyphs_waning = ['&#127765;', '&#127766;', '&#127767;', '&#127768;', '&#127761;']
+
+        if latitude < 0:
+            # southern hemisphere perspective
+            moon_glyphs_waxing, moon_glyphs_waning = moon_glyphs_waning, moon_glyphs_waxing
+            moon_glyphs_waxing.reverse()
+            moon_glyphs_waning.reverse()
+
+
         if moon_cycle_percent <= 50:
             # waxing
-            if moon_phase_percent >= 0 and moon_phase_percent < 15:
-                data['moon_glyph'] = '&#127761;'
-            elif moon_phase_percent >= 15 and moon_phase_percent < 35:
-                data['moon_glyph'] = '&#127762;'
-            elif moon_phase_percent >= 35 and moon_phase_percent < 65:
-                data['moon_glyph'] = '&#127763;'
-            elif moon_phase_percent >= 65 and moon_phase_percent < 85:
-                data['moon_glyph'] = '&#127764;'
-            elif moon_phase_percent >= 85 and moon_phase_percent <= 100:
-                data['moon_glyph'] = '&#127765;'
+            data['moon_glyph'] = moon_glyphs_waxing[round(moon_phase_percent / (100 / (len(moon_glyphs_waxing) - 1)))]
         else:
             # waning
-            if moon_phase_percent >= 85 and moon_phase_percent <= 100:
-                data['moon_glyph'] = '&#127765;'
-            elif moon_phase_percent >= 65 and moon_phase_percent < 85:
-                data['moon_glyph'] = '&#127766;'
-            elif moon_phase_percent >= 35 and moon_phase_percent < 65:
-                data['moon_glyph'] = '&#127767;'
-            elif moon_phase_percent >= 15 and moon_phase_percent < 35:
-                data['moon_glyph'] = '&#127768;'
-            elif moon_phase_percent >= 0 and moon_phase_percent < 15:
-                data['moon_glyph'] = '&#127761;'
+            data['moon_glyph'] = moon_glyphs_waning[round((100 - moon_phase_percent) / (100 / (len(moon_glyphs_waning) - 1)))]
 
 
+        obs.date = utcnow  # reset
+        sun.compute(obs)
+
+        try:
+            obs.horizon = math.radians(self.indi_allsky_config['NIGHT_SUN_ALT_DEG'])
+            if self.night:
+                mode_next_change_date = obs.next_rising(sun).datetime()
+            else:
+                mode_next_change_date = obs.next_setting(sun).datetime()
+
+            data['mode_next_change'] = (mode_next_change_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['mode_next_change_h'] = (mode_next_change_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['mode_next_change'] = '--:--'
+            data['mode_next_change_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['mode_next_change'] = '--:--'
+            data['mode_next_change_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        sun.compute(obs)
+
+        try:
+            sun_next_rise_date = obs.next_rising(sun).datetime()
+            data['sun_next_rise'] = (sun_next_rise_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['sun_next_rise_h'] = (sun_next_rise_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['sun_next_rise'] = '--:--'
+            data['sun_next_rise_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['sun_next_rise'] = '--:--'
+            data['sun_next_rise_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        sun.compute(obs)
+
+        try:
+            sun_next_set_date = obs.next_setting(sun).datetime()
+            data['sun_next_set'] = (sun_next_set_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['sun_next_set_h'] = (sun_next_set_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['sun_next_set'] = '--:--'
+            data['sun_next_set_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['sun_next_set'] = '--:--'
+            data['sun_next_set_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        moon.compute(obs)
+
+        try:
+            moon_next_rise_date = obs.next_rising(moon).datetime()
+            data['moon_next_rise'] = (moon_next_rise_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['moon_next_rise_h'] = (moon_next_rise_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['moon_next_rise'] = '--:--'
+            data['moon_next_rise_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['moon_next_rise'] = '--:--'
+            data['moon_next_rise_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        moon.compute(obs)
+
+        try:
+            moon_next_set_date = obs.next_setting(moon).datetime()
+            data['moon_next_set'] = (moon_next_set_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['moon_next_set_h'] = (moon_next_set_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['moon_next_set'] = '--:--'
+            data['moon_next_set_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['moon_next_set'] = '--:--'
+            data['moon_next_set_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        sun.compute(obs)
+
+        try:
+            obs.horizon = math.radians(-18.0)
+            sun_next_astro_twilight_rise_date = obs.next_rising(sun).datetime()
+            data['sun_next_astro_twilight_rise'] = (sun_next_astro_twilight_rise_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['sun_next_astro_twilight_rise_h'] = (sun_next_astro_twilight_rise_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['sun_next_astro_twilight_rise'] = '--:--'
+            data['sun_next_astro_twilight_rise_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['sun_next_astro_twilight_rise'] = '--:--'
+            data['sun_next_astro_twilight_rise_h'] = 0.0
+
+
+        obs.date = utcnow  # reset
+        sun.compute(obs)
+
+        try:
+            obs.horizon = math.radians(-18.0)
+            sun_next_astro_twilight_set_date = obs.next_setting(sun).datetime()
+            data['sun_next_astro_twilight_set'] = (sun_next_astro_twilight_set_date + timedelta(seconds=camera_utc_offset)).strftime('%H:%M')
+            data['sun_next_astro_twilight_set_h'] = (sun_next_astro_twilight_set_date - utcnow.replace(tzinfo=None)).total_seconds() / 3600
+        except ephem.NeverUpError:
+            data['sun_next_astro_twilight_set'] = '--:--'
+            data['sun_next_astro_twilight_set_h'] = 0.0
+        except ephem.AlwaysUpError:
+            data['sun_next_astro_twilight_set'] = '--:--'
+            data['sun_next_astro_twilight_set_h'] = 0.0
+
+
+        #obs.horizon = math.radians(0.0)  # reset
         #app.logger.info('Astrometric data: %s', data)
 
         return data
@@ -458,12 +567,20 @@ class BaseView(View):
     def get_aurora_info(self):
         if not self.camera_data:
             data = {
+                'aurora_data_status' : 'No data',
                 'kpindex' : 0.0,
-                'kpindex_status' : 'No data',
+                'kpindex_status' : 'No data',  # legacy
                 'kpindex_trend' : '',
                 'kpindex_rating' : '',
                 'ovation_max' : 0,
-                'ovation_max_status' : 'No data',
+                'ovation_max_status' : 'No data',  # legacy
+                'aurora_mag_bt' : 0.0,
+                'aurora_mag_gsm_bz' : 0.0,
+                'aurora_n_hemi_gw' : 0.0,
+                'aurora_s_hemi_gw' : 0.0,
+                'aurora_plasma_density' : 0.0,
+                'aurora_plasma_speed' : 0.0,
+                'aurora_plasma_temp' : 0,
             }
             return data
 
@@ -471,6 +588,29 @@ class BaseView(View):
         kpindex_current = float(self.camera_data.get('KPINDEX_CURRENT', 0))
         kpindex_coef = float(self.camera_data.get('KPINDEX_COEF', 0))
         ovation_max = int(self.camera_data.get('OVATION_MAX', 0))
+        aurora_mag_bt = float(self.camera_data.get('AURORA_MAG_BT', 0.0))
+        aurora_mag_gsm_bz = float(self.camera_data.get('AURORA_MAG_GSM_BZ', 0.0))
+        aurora_plasma_density = float(self.camera_data.get('AURORA_PLASMA_DENSITY', 0.0))
+        aurora_plasma_speed = float(self.camera_data.get('AURORA_PLASMA_SPEED', 0.0))
+        aurora_plasma_temp = int(self.camera_data.get('AURORA_PLASMA_TEMP', 0))
+        n_hemi_gw = int(self.camera_data.get('AURORA_N_HEMI_GW', 0))
+        s_hemi_gw = int(self.camera_data.get('AURORA_S_HEMI_GW', 0))
+
+
+        data = {
+            'aurora_data_status' : '',  # just use this for all statuses
+            'kpindex' : kpindex_current,
+            'kpindex_status' : '',  # legacy
+            'ovation_max' : ovation_max,
+            'ovation_max_status' : '',  # legacy
+            'aurora_mag_bt' : aurora_mag_bt,
+            'aurora_mag_gsm_bz' : aurora_mag_gsm_bz,
+            'aurora_plasma_density' : aurora_plasma_density,
+            'aurora_plasma_speed' : aurora_plasma_speed,
+            'aurora_plasma_temp' : aurora_plasma_temp,
+            'aurora_n_hemi_gw' : n_hemi_gw,
+            'aurora_s_hemi_gw' : s_hemi_gw,
+        }
 
 
         now = datetime.now()
@@ -479,25 +619,17 @@ class BaseView(View):
         data_timestamp = int(self.camera_data.get('AURORA_DATA_TS', 0))
         if data_timestamp:
             if data_timestamp < now_minus_6h.timestamp():
-                data = {
-                    'kpindex' : kpindex_current,
-                    'kpindex_status' : '[old]',
+                data.update({
+                    'aurora_data_status' : '[old]',
+                    'kpindex_status' : '[old]',  # legacy
                     'kpindex_trend' : '',
                     'kpindex_rating' : '',
-                    'ovation_max' : ovation_max,
-                    'ovation_max_status' : '[old]',
-                }
+                    'ovation_max_status' : '[old]',  # legacy
+                })
                 return data
 
 
-        data = {
-            'kpindex' : kpindex_current,
-            'kpindex_status' : '',
-            'ovation_max' : ovation_max,
-            'ovation_max_status' : '',
-        }
-
-
+        ### synthetic data below here
 
         if kpindex_coef == 0:
             kpindex_trend = ''
@@ -556,6 +688,45 @@ class BaseView(View):
                 data['smoke_rating_status'] = '[old]'
 
         return data
+
+
+    def validate_longitude_timezone(self):
+        # The theory behind timezones is the sun should be relatively near zenith at noon
+        # If there is significant (6+ hours) offset between noon and the suns next transit, the longitude is probably wrong
+
+        now = datetime.now()
+        utc_offset = now.astimezone().utcoffset()
+
+
+        noon = datetime.strptime(now.strftime('%Y%m%d12'), '%Y%m%d%H')
+        midnight = datetime.strptime(now.strftime('%Y%m%d00'), '%Y%m%d%H')
+        midnight_utc = midnight - utc_offset
+
+
+        obs = ephem.Observer()
+        obs.lon = math.radians(self.indi_allsky_config['LOCATION_LONGITUDE'])
+        obs.lat = math.radians(self.indi_allsky_config['LOCATION_LATITUDE'])
+
+        sun = ephem.Sun()
+
+        obs.date = midnight_utc
+        sun.compute(obs)
+
+
+        next_sun_transit = obs.next_transit(sun)
+        local_next_sun_transit = next_sun_transit.datetime() + utc_offset
+
+
+        if noon > local_next_sun_transit:
+            transit_noon_diff_hours = (noon - local_next_sun_transit).seconds / 3600
+        else:
+            transit_noon_diff_hours = (local_next_sun_transit - noon).seconds / 3600
+
+
+        if transit_noon_diff_hours < 6:
+            return True
+
+        return False
 
 
     def get_status_text(self, data):
@@ -715,70 +886,6 @@ class BaseView(View):
 
 class TemplateView(BaseView):
 
-    SENSOR_SLOT_choices = [  # mutable
-        ('0', 'Camera Temp'),
-        ('1', 'Dew Heater Level'),
-        ('2', 'Dew Point'),
-        ('3', 'Frost Point'),
-        ('4', 'Fan Level'),
-        ('5', 'Heat Index'),
-        ('6', 'Wind Dir Degrees'),
-        ('7', 'SQM'),
-        ('8', 'Future Use 8'),
-        ('9', 'Future Use 9'),
-        ('10', 'User Slot 10'),
-        ('11', 'User Slot 11'),
-        ('12', 'User Slot 12'),
-        ('13', 'User Slot 13'),
-        ('14', 'User Slot 14'),
-        ('15', 'User Slot 15'),
-        ('16', 'User Slot 16'),
-        ('17', 'User Slot 17'),
-        ('18', 'User Slot 18'),
-        ('19', 'User Slot 19'),
-        ('20', 'User Slot 20'),
-        ('21', 'User Slot 21'),
-        ('22', 'User Slot 22'),
-        ('23', 'User Slot 23'),
-        ('24', 'User Slot 24'),
-        ('25', 'User Slot 25'),
-        ('26', 'User Slot 26'),
-        ('27', 'User Slot 27'),
-        ('28', 'User Slot 28'),
-        ('29', 'User Slot 29'),
-        ('100', 'Camera Temp'),
-        ('101', 'Future Use 1'),
-        ('102', 'Future Use 2'),
-        ('103', 'Future Use 3'),
-        ('104', 'Future Use 4'),
-        ('105', 'Future Use 5'),
-        ('106', 'Future Use 6'),
-        ('107', 'Future Use 7'),
-        ('108', 'Future Use 8'),
-        ('109', 'Future Use 9'),
-        ('110', 'System Temp 10'),
-        ('111', 'System Temp 11'),
-        ('112', 'System Temp 12'),
-        ('113', 'System Temp 13'),
-        ('114', 'System Temp 14'),
-        ('115', 'System Temp 15'),
-        ('116', 'System Temp 16'),
-        ('117', 'System Temp 17'),
-        ('118', 'System Temp 18'),
-        ('119', 'System Temp 19'),
-        ('120', 'System Temp 20'),
-        ('121', 'System Temp 21'),
-        ('122', 'System Temp 22'),
-        ('123', 'System Temp 23'),
-        ('124', 'System Temp 24'),
-        ('125', 'System Temp 25'),
-        ('126', 'System Temp 26'),
-        ('127', 'System Temp 27'),
-        ('128', 'System Temp 28'),
-        ('129', 'System Temp 29'),
-    ]
-
-
     def __init__(self, template_name, **kwargs):
         super(TemplateView, self).__init__(**kwargs)
         self.template_name = template_name
@@ -810,6 +917,8 @@ class TemplateView(BaseView):
         status_data.update(self.get_astrometric_info())
         status_data.update(self.get_smoke_info())
         status_data.update(self.get_aurora_info())
+
+        #app.logger.info('Status data: %s', status_data)
 
         context = {
             'status_text'        : self.get_status_text(status_data) + self.get_web_extra_text(),
@@ -883,84 +992,6 @@ class TemplateView(BaseView):
         return '<a href="{0:s}" style="text-decoration: none">{1:s}</a>'.format(url_for('indi_allsky.user_view'), current_user.username)
 
 
-    def update_sensor_slot_labels(self):
-        from ..devices import sensors as indi_allsky_sensors
-
-        temp_sensor__a_classname = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_CLASSNAME', '')
-        temp_sensor__a_label = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_LABEL', 'Sensor A')
-        temp_sensor__a_user_var_slot = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT')
-        temp_sensor__b_classname = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_CLASSNAME', '')
-        temp_sensor__b_label = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_LABEL', 'Sensor B')
-        temp_sensor__b_user_var_slot = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT')
-        temp_sensor__c_classname = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_CLASSNAME', '')
-        temp_sensor__c_label = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_LABEL', 'Sensor C')
-        temp_sensor__c_user_var_slot = self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT')
-
-
-        # fix system temp offset
-        if temp_sensor__a_user_var_slot >= 100:
-            temp_sensor__a_user_var_slot -= 79
-
-        if temp_sensor__b_user_var_slot >= 100:
-            temp_sensor__b_user_var_slot -= 79
-
-        if temp_sensor__c_user_var_slot >= 100:
-            temp_sensor__c_user_var_slot -= 79
-
-
-        if temp_sensor__a_classname:
-            try:
-                temp_sensor__a_class = getattr(indi_allsky_sensors, temp_sensor__a_classname)
-
-                for x in range(temp_sensor__a_class.METADATA['count']):
-                    self.SENSOR_SLOT_choices[temp_sensor__a_user_var_slot + x] = (
-                        str(temp_sensor__a_user_var_slot + x),
-                        '{0:s} - {1:s} - {2:s}'.format(
-                            temp_sensor__a_class.METADATA['name'],
-                            temp_sensor__a_label,
-                            temp_sensor__a_class.METADATA['labels'][x],
-                        ),
-                    )
-            except AttributeError:
-                app.logger.error('Unknown sensor class: %s', temp_sensor__a_classname)
-
-
-        if temp_sensor__b_classname:
-            try:
-                temp_sensor__b_class = getattr(indi_allsky_sensors, temp_sensor__b_classname)
-
-                for x in range(temp_sensor__b_class.METADATA['count']):
-                    self.SENSOR_SLOT_choices[temp_sensor__b_user_var_slot + x] = (
-                        str(temp_sensor__b_user_var_slot + x),
-                        '{0:s} - {1:s} - {2:s}'.format(
-                            temp_sensor__b_class.METADATA['name'],
-                            temp_sensor__b_label,
-                            temp_sensor__b_class.METADATA['labels'][x],
-                        ),
-                    )
-            except AttributeError:
-                app.logger.error('Unknown sensor class: %s', temp_sensor__a_classname)
-
-
-        if temp_sensor__c_classname:
-            try:
-                temp_sensor__c_class = getattr(indi_allsky_sensors, temp_sensor__c_classname)
-
-                for x in range(temp_sensor__c_class.METADATA['count']):
-                    self.SENSOR_SLOT_choices[temp_sensor__c_user_var_slot + x] = (
-                        str(temp_sensor__c_user_var_slot + x),
-                        '{0:s} - {1:s} - {2:s}'.format(
-                            temp_sensor__c_class.METADATA['name'],
-                            temp_sensor__c_label,
-                            temp_sensor__c_class.METADATA['labels'][x],
-                        ),
-                    )
-            except AttributeError:
-                app.logger.error('Unknown sensor class: %s', temp_sensor__a_classname)
-
-
-
-
 class FormView(TemplateView):
     pass
 
@@ -998,5 +1029,9 @@ class FakeCamera(object):
     web_nonlocal_images = False
     web_local_images_admin = False
     utc_offset = 0
+    minGain = -1
+    maxGain = -1
+    minExposure = -1.0
+    maxExposure = -1.0
     data = {}
 

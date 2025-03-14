@@ -9,6 +9,8 @@ import queue
 
 from multiprocessing import Process
 
+from . import constants
+
 from .devices import generic as indi_allsky_gpios
 from .devices import dew_heaters
 from .devices import fans
@@ -54,9 +56,10 @@ class SensorWorker(Process):
         self.next_run_offset = 15
 
         # dew heater
-        self.dh_temp_user_slot = self.config.get('DEW_HEATER', {}).get('TEMP_USER_VAR_SLOT', 10)
+        self.dh_temp_slot = self.config.get('DEW_HEATER', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10')
+        self.dh_dewpoint_slot = self.config.get('DEW_HEATER', {}).get('DEWPOINT_USER_VAR_SLOT', 'sensor_user_2')
 
-        self.dh_level_default = self.config.get('DEW_HEATER', {}).get('LEVEL_DEF', 100)
+        self.dh_level_default = self.config.get('DEW_HEATER', {}).get('LEVEL_DEF', 0)
         self.dh_level_low = self.config.get('DEW_HEATER', {}).get('LEVEL_LOW', 33)
         self.dh_level_med = self.config.get('DEW_HEATER', {}).get('LEVEL_MED', 66)
         self.dh_level_high = self.config.get('DEW_HEATER', {}).get('LEVEL_HIGH', 100)
@@ -67,16 +70,16 @@ class SensorWorker(Process):
 
         # fan
         self.fan_target = self.config.get('FAN', {}).get('TARGET', 30.0)
-        self.fan_temp_user_slot = self.config.get('FAN', {}).get('TEMP_USER_VAR_SLOT', 10)
+        self.fan_temp_slot = self.config.get('FAN', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10')
 
-        self.fan_level_default = self.config.get('FAN', {}).get('LEVEL_DEF', 100)
+        self.fan_level_default = self.config.get('FAN', {}).get('LEVEL_DEF', 0)
         self.fan_level_low = self.config.get('FAN', {}).get('LEVEL_LOW', 33)
         self.fan_level_med = self.config.get('FAN', {}).get('LEVEL_MED', 66)
         self.fan_level_high = self.config.get('FAN', {}).get('LEVEL_HIGH', 100)
 
-        self.fan_thold_diff_low = self.config.get('FAN', {}).get('THOLD_DIFF_LOW', 0)
-        self.fan_thold_diff_med = self.config.get('FAN', {}).get('THOLD_DIFF_MED', 5)
-        self.fan_thold_diff_high = self.config.get('FAN', {}).get('THOLD_DIFF_HIGH', 10)
+        self.fan_thold_diff_low = self.config.get('FAN', {}).get('THOLD_DIFF_LOW', -10)
+        self.fan_thold_diff_med = self.config.get('FAN', {}).get('THOLD_DIFF_MED', -5)
+        self.fan_thold_diff_high = self.config.get('FAN', {}).get('THOLD_DIFF_HIGH', 0)
 
 
         self._shutdown = False
@@ -266,6 +269,12 @@ class SensorWorker(Process):
             except DeviceControlException as e:
                 logger.error('GPIO exception: %s', str(e))
                 return
+            except OSError as e:
+                logger.error('GPIO OSError: %s', str(e))
+                return
+            except IOError as e:
+                logger.error('GPIO IOError: %s', str(e))
+                return
 
 
     def init_dew_heater(self):
@@ -292,6 +301,13 @@ class SensorWorker(Process):
             except DeviceControlException as e:
                 logger.error('Dew heater exception: %s', str(e))
                 return
+            except OSError as e:
+                logger.error('Dew heater OSError: %s', str(e))
+                return
+            except IOError as e:
+                logger.error('Dew heater IOError: %s', str(e))
+                return
+
 
             with self.sensors_user_av.get_lock():
                 self.sensors_user_av[1] = float(self.dew_heater.state)
@@ -320,6 +336,13 @@ class SensorWorker(Process):
             except DeviceControlException as e:
                 logger.error('Fan exception: %s', str(e))
                 return
+            except OSError as e:
+                logger.error('Fan OSError: %s', str(e))
+                return
+            except IOError as e:
+                logger.error('Fan IOError: %s', str(e))
+                return
+
 
             with self.sensors_user_av.get_lock():
                 self.sensors_user_av[4] = float(self.fan.state)
@@ -335,13 +358,21 @@ class SensorWorker(Process):
             a_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('A_I2C_ADDRESS', '0x77')
             a_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('A_PIN_1', 'notdefined')
 
-            self.sensors[0] = a_sensor(
-                self.config,
-                a_sensor_label,
-                self.night_v,
-                pin_1_name=a_sensor_pin_1_name,
-                i2c_address=a_sensor_i2c_address,
-            )
+            try:
+                self.sensors[0] = a_sensor(
+                    self.config,
+                    a_sensor_label,
+                    self.night_v,
+                    pin_1_name=a_sensor_pin_1_name,
+                    i2c_address=a_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[0] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor A',
+                    self.night_v,
+                )
         else:
             self.sensors[0] = indi_allsky_sensors.sensor_simulator(
                 self.config,
@@ -349,7 +380,8 @@ class SensorWorker(Process):
                 self.night_v,
             )
 
-        self.sensors[0].slot = self.config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 10)
+        sensor_0_key = self.config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 'sensor_user_10')
+        self.sensors[0].slot = constants.SENSOR_INDEX_MAP[sensor_0_key]
 
 
         ### Sensor B
@@ -361,13 +393,21 @@ class SensorWorker(Process):
             b_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('B_I2C_ADDRESS', '0x76')
             b_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('B_PIN_1', 'notdefined')
 
-            self.sensors[1] = b_sensor(
-                self.config,
-                b_sensor_label,
-                self.night_v,
-                pin_1_name=b_sensor_pin_1_name,
-                i2c_address=b_sensor_i2c_address,
-            )
+            try:
+                self.sensors[1] = b_sensor(
+                    self.config,
+                    b_sensor_label,
+                    self.night_v,
+                    pin_1_name=b_sensor_pin_1_name,
+                    i2c_address=b_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[1] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor B',
+                    self.night_v,
+                )
         else:
             self.sensors[1] = indi_allsky_sensors.sensor_simulator(
                 self.config,
@@ -375,7 +415,8 @@ class SensorWorker(Process):
                 self.night_v,
             )
 
-        self.sensors[1].slot = self.config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 15)
+        sensor_1_key = self.config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 'sensor_user_15')
+        self.sensors[1].slot = constants.SENSOR_INDEX_MAP[sensor_1_key]
 
 
         ### Sensor C
@@ -387,13 +428,21 @@ class SensorWorker(Process):
             c_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('C_I2C_ADDRESS', '0x40')
             c_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('C_PIN_1', 'notdefined')
 
-            self.sensors[2] = c_sensor(
-                self.config,
-                c_sensor_label,
-                self.night_v,
-                pin_1_name=c_sensor_pin_1_name,
-                i2c_address=c_sensor_i2c_address,
-            )
+            try:
+                self.sensors[2] = c_sensor(
+                    self.config,
+                    c_sensor_label,
+                    self.night_v,
+                    pin_1_name=c_sensor_pin_1_name,
+                    i2c_address=c_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[2] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor B',
+                    self.night_v,
+                )
         else:
             self.sensors[2] = indi_allsky_sensors.sensor_simulator(
                 self.config,
@@ -401,7 +450,8 @@ class SensorWorker(Process):
                 self.night_v,
             )
 
-        self.sensors[2].slot = self.config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 15)
+        sensor_2_key = self.config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 'sensor_user_15')
+        self.sensors[2].slot = constants.SENSOR_INDEX_MAP[sensor_2_key]
 
 
     def update_sensors(self):
@@ -431,6 +481,12 @@ class SensorWorker(Process):
                         self.sensors_user_av[sensor.slot + i] = float(v)
             except SensorReadException as e:
                 logger.error('SensorReadException: {0:s}'.format(str(e)))
+            except OSError as e:
+                logger.error('Sensor OSError: {0:s}'.format(str(e)))
+            except IOError as e:
+                logger.error('Sensor IOError: {0:s}'.format(str(e)))
+            except IndexError as e:
+                logger.error('Sensor slot error: {0:s}'.format(str(e)))
 
 
     def check_dew_heater_thresholds(self):
@@ -447,40 +503,39 @@ class SensorWorker(Process):
         if manual_target:
             target_val = manual_target
         else:
-            target_val = self.sensors_user_av[2]  # dew point
+            if str(self.dh_temp_slot).startswith('sensor_temp'):
+                target_val = self.sensors_temp_av[constants.SENSOR_INDEX_MAP[self.dh_dewpoint_slot]]  # dew point
+            else:
+                target_val = self.sensors_user_av[constants.SENSOR_INDEX_MAP[self.dh_dewpoint_slot]]  # dew point
 
 
         if not target_val:
             logger.warning('Dew heater target dew point is 0, possible misconfiguration')
 
 
-        if self.dh_temp_user_slot < 100:
-            # user slots
-            current_temp = self.sensors_user_av[self.dh_temp_user_slot]
-        else:
-            # use system temps
-            slot = self.dh_temp_user_slot - 100
-            temp_c = self.sensors_temp_av[slot]
-
+        if str(self.dh_temp_slot).startswith('sensor_temp'):
+            current_temp = self.sensors_temp_av[constants.SENSOR_INDEX_MAP[self.dh_temp_slot]]
 
             if self.config.get('TEMP_DISPLAY') == 'f':
-                current_temp = (temp_c * 9.0 / 5.0) + 32
+                current_temp = (current_temp * 9.0 / 5.0) + 32
             elif self.config.get('TEMP_DISPLAY') == 'k':
-                current_temp = temp_c + 273.15
+                current_temp = current_temp + 273.15
             else:
-                current_temp = temp_c
+                pass
+        else:
+            current_temp = self.sensors_user_av[constants.SENSOR_INDEX_MAP[self.dh_temp_slot]]
 
 
-        temp_diff = current_temp - target_val
-        logger.info('Dew Heater threshold current: %0.1f, target: %0.1f, delta: %0.1f', current_temp, target_val, temp_diff)
+        dh_temp_delta = current_temp - target_val
+        logger.info('Dew Heater threshold current: %0.1f, target: %0.1f, delta: %0.1f (%0.0f%%)', current_temp, target_val, dh_temp_delta, self.dew_heater.state)
 
-        if temp_diff <= self.dh_thold_diff_high:
+        if dh_temp_delta <= self.dh_thold_diff_high:
             # set dew heater to high
             self.set_dew_heater(self.dh_level_high)
-        elif temp_diff <= self.dh_thold_diff_med:
+        elif dh_temp_delta <= self.dh_thold_diff_med:
             # set dew heater to medium
             self.set_dew_heater(self.dh_level_med)
-        elif temp_diff <= self.dh_thold_diff_low:
+        elif dh_temp_delta <= self.dh_thold_diff_low:
             # set dew heater to low
             self.set_dew_heater(self.dh_level_low)
         else:
@@ -498,33 +553,29 @@ class SensorWorker(Process):
             return
 
 
-        if self.fan_temp_user_slot < 100:
-            # user slots
-            current_temp = self.sensors_user_av[self.fan_temp_user_slot]
-        else:
-            # use system temps
-            slot = self.fan_temp_user_slot - 100
-            temp_c = self.sensors_temp_av[slot]
-
+        if str(self.fan_temp_slot).startswith('sensor_temp'):
+            current_temp = self.sensors_temp_av[constants.SENSOR_INDEX_MAP[self.fan_temp_slot]]
 
             if self.config.get('TEMP_DISPLAY') == 'f':
-                current_temp = (temp_c * 9.0 / 5.0) + 32
+                current_temp = (current_temp * 9.0 / 5.0) + 32
             elif self.config.get('TEMP_DISPLAY') == 'k':
-                current_temp = temp_c + 273.15
+                current_temp = current_temp + 273.15
             else:
-                current_temp = temp_c
+                pass
+        else:
+            current_temp = self.sensors_user_av[constants.SENSOR_INDEX_MAP[self.fan_temp_slot]]
 
 
-        temp_diff = current_temp - self.fan_target
-        logger.info('Fan threshold current: %0.1f, target: %0.1f, delta: %0.1f', current_temp, self.fan_target, temp_diff)
+        fan_temp_delta = current_temp - self.fan_target
+        logger.info('Fan threshold current: %0.1f, target: %0.1f, delta: %0.1f (%0.0f%%)', current_temp, self.fan_target, fan_temp_delta, self.fan.state)
 
-        if temp_diff > self.fan_thold_diff_high:
+        if fan_temp_delta > self.fan_thold_diff_high:
             # set fan to high
             self.set_fan(self.fan_level_high)
-        elif temp_diff > self.fan_thold_diff_med:
+        elif fan_temp_delta > self.fan_thold_diff_med:
             # set fan to medium
             self.set_fan(self.fan_level_med)
-        elif temp_diff > self.fan_thold_diff_low:
+        elif fan_temp_delta > self.fan_thold_diff_low:
             # set fan to low
             self.set_fan(self.fan_level_low)
         else:

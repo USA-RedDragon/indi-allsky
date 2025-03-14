@@ -26,7 +26,6 @@ import numpy
 
 from PIL import Image
 
-import piexif
 from fractions import Fraction
 
 from . import constants
@@ -107,9 +106,21 @@ class ImageWorker(Process):
             'moon_alt'      : 0.0,
             'moon_phase'    : 0.0,
             'sun_moon_sep'  : 90.0,
+            'sun_next_rise' : 'unset',
+            'sun_next_rise_h' : 0.0,
+            'sun_next_set'  : 'unset',
+            'sun_next_set_h': 0.0,
+            'sun_next_astro_twilight_rise'  : 'unset',
+            'sun_next_astro_twilight_rise_h': 0.0,
+            'sun_next_astro_twilight_set'   : 'unset',
+            'sun_next_astro_twilight_set_h' : 0.0,
             'moon_cycle'    : 0.0,
             'sidereal_time' : 'unset',
             'moon_up'       : 'unset',
+            'moon_next_rise': 'unset',
+            'moon_next_rise_h' : 0.0,
+            'moon_next_set' : 'unset',
+            'moon_next_set_h' : 0.0,
             'mercury_alt'   : 0.0,
             'mercury_up'    : 'unset',
             'venus_alt'     : 0.0,
@@ -244,11 +255,17 @@ class ImageWorker(Process):
 
 
             if i_dict.get('stop'):
+                self.image_processor.realtimeKeogramDataSave()
+
                 logger.warning('Goodbye')
+
                 return
 
             if self._shutdown:
+                self.image_processor.realtimeKeogramDataSave()
+
                 logger.warning('Goodbye')
+
                 return
 
 
@@ -258,6 +275,8 @@ class ImageWorker(Process):
 
 
     def processImage(self, i_dict):
+        import piexif
+
         ### Not using DB task queue for image processing to reduce database I/O
         #task_id = i_dict['task_id']
 
@@ -375,7 +394,9 @@ class ImageWorker(Process):
 
 
         # use original value if not defined
-        libcamera_black_level = i_ref.get('libcamera_black_level', libcamera_black_level)
+        if i_ref.libcamera_black_level:
+            libcamera_black_level = i_ref.libcamera_black_level
+
 
         self.image_processor.calibrate(libcamera_black_level=libcamera_black_level)
 
@@ -385,22 +406,16 @@ class ImageWorker(Process):
                 self.write_fit(i_ref, camera)
 
 
-        self.image_processor.fits2opencv()
-
+        self.image_processor.debayer()
 
         self.image_processor.calculateSqm()
 
-        self.image_processor.stack()
-
-        self.image_processor.debayer()
-
+        self.image_processor.stack()  # this populates self.image
 
 
         image_height, image_width = self.image_processor.image.shape[:2]
         logger.info('Image: %d x %d', image_width, image_height)
 
-
-        i_ref = self.image_processor.getLatestImage()
 
         ### IMAGE IS CALIBRATED ###
 
@@ -556,22 +571,16 @@ class ImageWorker(Process):
             self.image_processor.drawDetections()
 
 
-        if self.config.get('IMAGE_ROTATE'):
-            self.image_processor.rotate_90()
-
-
         # rotation
-        if self.config.get('IMAGE_ROTATE_ANGLE'):
-            self.image_processor.rotate_angle()
+        self.image_processor.rotate_90()
+        self.image_processor.rotate_angle()
 
 
         # verticle flip
-        if self.config.get('IMAGE_FLIP_V'):
-            self.image_processor.flip_v()
+        self.image_processor.flip_v()
 
         # horizontal flip
-        if self.config.get('IMAGE_FLIP_H'):
-            self.image_processor.flip_h()
+        self.image_processor.flip_h()
 
 
         # crop
@@ -580,19 +589,20 @@ class ImageWorker(Process):
 
 
         # green removal
-        if self.config.get('SCNR_ALGORITHM'):
-            self.image_processor.scnr()
+        self.image_processor.scnr()
 
 
         # white balance
         self.image_processor.white_balance_manual_bgr()
-
-        if self.config.get('AUTO_WB'):
-            self.image_processor.white_balance_auto_bgr()
+        self.image_processor.white_balance_auto_bgr()
 
 
         # saturation
         self.image_processor.saturation_adjust()
+
+
+        # gamma correction
+        self.image_processor.apply_gamma_correction()
 
 
         if not self.config.get('CONTRAST_ENHANCE_16BIT'):
@@ -607,40 +617,38 @@ class ImageWorker(Process):
         self.image_processor.colorize()
 
 
+        longterm_keogram_pixels = self.save_longterm_keogram_data(exp_date, camera_id)
+
+
         self.image_processor.apply_image_circle_mask()
 
 
-        self.image_processor.apply_logo_overlay()
-
-
-        if self.config['IMAGE_SCALE'] and self.config['IMAGE_SCALE'] != 100:
-            self.image_processor.scale_image()
-
-
-        # blur
-        #self.image_processor.median_blur()
-
-        # denoise
-        #self.image_processor.fastDenoise()
+        self.image_processor.realtimeKeogramUpdate()
 
 
         if self.config.get('FISH2PANO', {}).get('ENABLE'):
-            if not self.image_count % self.config.get('FISH2PANO', {}).get('MODULUS', 4):
+            if not self.image_count % self.config.get('FISH2PANO', {}).get('MODULUS', 2):
                 pano_data = self.image_processor.fish2pano()
-
-
-                if self.config.get('FISH2PANO', {}).get('FLIP_H'):
-                    pano_data = self.image_processor._flip(pano_data, 1)
 
 
                 if self.config.get('FISH2PANO', {}).get('ENABLE_CARDINAL_DIRS'):
                     pano_data = self.image_processor.fish2pano_cardinal_dirs_label(pano_data)
 
+
                 self.write_panorama_img(pano_data, i_ref, camera, jpeg_exif=jpeg_exif)
 
 
+        self.image_processor.apply_logo_overlay()
+
+
+        self.image_processor.scale_image()
+
+
+        self.image_processor.add_border()
 
         self.image_processor.moon_overlay()
+
+        self.image_processor.lightgraph_overlay()
 
         self.image_processor.orb_image()
 
@@ -676,13 +684,19 @@ class ImageWorker(Process):
 
         self.write_status_json(i_ref, adu, adu_average)  # write json status file
 
+
+        if not isinstance(self.image_processor.realtime_keogram_data, type(None)):
+            # keogram might be empty on dimension mismatch
+            self.write_realtime_keogram(self.image_processor.realtime_keogram_trimmed, camera)
+
+
         latest_file, new_filename = self.write_img(self.image_processor.image, i_ref, camera, jpeg_exif=jpeg_exif)
 
         if new_filename:
             image_metadata = {
                 'type'            : constants.IMAGE,
-                'createDate'      : exp_date.timestamp(),
-                'dayDate'         : i_ref['day_date'].strftime('%Y%m%d'),
+                'createDate'      : int(exp_date.timestamp()),
+                'dayDate'         : i_ref.day_date.strftime('%Y%m%d'),
                 'utc_offset'      : exp_date.astimezone().utcoffset().total_seconds(),
                 'exposure'        : exposure,
                 'exp_elapsed'     : exp_elapsed,
@@ -695,22 +709,32 @@ class ImageWorker(Process):
                 'moonphase'       : self.astrometric_data['moon_phase'],
                 'night'           : bool(self.night_v.value),
                 'adu_roi'         : self.config['ADU_ROI'],
-                'calibrated'      : i_ref['calibrated'],
-                'sqm'             : i_ref['sqm_value'],
-                'stars'           : len(i_ref['stars']),
-                'detections'      : len(i_ref['lines']),
+                'calibrated'      : i_ref.calibrated,
+                'sqm'             : i_ref.sqm_value,
+                'stars'           : len(i_ref.stars),
+                'detections'      : len(i_ref.lines),
                 'process_elapsed' : processing_elapsed_s,
-                'kpindex'         : i_ref['kpindex'],
-                'ovation_max'     : i_ref['ovation_max'],
-                'smoke_rating'    : i_ref['smoke_rating'],
+                'kpindex'         : i_ref.kpindex,
+                'ovation_max'     : i_ref.ovation_max,
+                'smoke_rating'    : i_ref.smoke_rating,
                 'height'          : final_height,
                 'width'           : final_width,
-                'camera_uuid'     : i_ref['camera_uuid'],
+                'keogram_pixels'  : longterm_keogram_pixels,
+                'camera_uuid'     : i_ref.camera_uuid,
             }
 
 
+            image_add_data = {
+                'aurora_mag_bt'     : i_ref.aurora_mag_bt,
+                'aurora_mag_gsm_bz' : i_ref.aurora_mag_gsm_bz,
+                'aurora_plasma_density' : i_ref.aurora_plasma_density,
+                'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+                'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+                'aurora_n_hemi_gw'  : i_ref.aurora_n_hemi_gw,
+                'aurora_s_hemi_gw'  : i_ref.aurora_s_hemi_gw,
+            }
 
-            image_add_data = dict()
+
             for i, v in enumerate(self.sensors_temp_av):
                 image_add_data['sensor_temp_{0:d}'.format(i)] = v
 
@@ -737,8 +761,8 @@ class ImageWorker(Process):
             image_thumbnail_metadata = {
                 'type'       : constants.THUMBNAIL,
                 'origin'     : constants.IMAGE,
-                'createDate' : exp_date.timestamp(),
-                'dayDate'    : i_ref['day_date'].strftime('%Y%m%d'),
+                'createDate' : int(exp_date.timestamp()),
+                'dayDate'    : i_ref.day_date.strftime('%Y%m%d'),
                 'utc_offset' : exp_date.astimezone().utcoffset().total_seconds(),
                 'night'      : bool(self.night_v.value),
                 'camera_uuid': camera.uuid,
@@ -772,18 +796,27 @@ class ImageWorker(Process):
                 'sunalt'   : round(self.astrometric_data['sun_alt'], 1),
                 'moonalt'  : round(self.astrometric_data['moon_alt'], 1),
                 'moonphase': round(self.astrometric_data['moon_phase'], 1),
+                'mooncycle': round(self.astrometric_data['moon_cycle'], 1),
                 'moonmode' : bool(self.moonmode_v.value),
                 'night'    : bool(self.night_v.value),
-                'sqm'      : round(i_ref['sqm_value'], 1),
-                'stars'    : len(i_ref['stars']),
+                'sqm'      : round(i_ref.sqm_value, 1),
+                'stars'    : len(i_ref.stars),
                 'latitude' : round(self.position_av[0], 3),
                 'longitude': round(self.position_av[1], 3),
                 'elevation': int(self.position_av[2]),
-                'kpindex'  : round(i_ref['kpindex'], 2),
-                'ovation_max'  : int(i_ref['ovation_max']),
-                'smoke_rating' : constants.SMOKE_RATING_MAP_STR[i_ref['smoke_rating']],
-                'aircraft' : len(self.adsb_aircraft_list),
-                'sidereal_time': self.astrometric_data['sidereal_time'],
+                'smoke_rating'  : constants.SMOKE_RATING_MAP_STR[i_ref.smoke_rating],
+                'aircraft'      : len(self.adsb_aircraft_list),
+                'sidereal_time' : self.astrometric_data['sidereal_time'],
+                'kpindex'       : round(i_ref.kpindex, 2),
+                'ovation_max'   : int(i_ref.ovation_max),
+                'aurora_mag_bt'     : round(i_ref.aurora_mag_bt, 2),
+                'aurora_mag_gsm_bz' : round(i_ref.aurora_mag_gsm_bz, 2),
+                'aurora_plasma_density' : round(i_ref.aurora_plasma_density, 2),
+                'aurora_plasma_speed'   : round(i_ref.aurora_plasma_speed, 2),
+                'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+                'aurora_n_hemi_gw'  : i_ref.aurora_n_hemi_gw,
+                'aurora_s_hemi_gw'  : i_ref.aurora_s_hemi_gw,
+
             }
 
 
@@ -869,7 +902,7 @@ class ImageWorker(Process):
 
 
                     # update share array
-                    # temperatures always Celcius here
+                    # temperatures always Celsius here
                     with self.sensors_temp_av.get_lock():
                         # index 0 is always ccd_temp
                         self.sensors_temp_av[10 + offset] = temp_c
@@ -940,32 +973,51 @@ class ImageWorker(Process):
 
         metadata = {
             'type'                : constants.METADATA,
-            'device'              : i_ref['camera_name'],
+            'device'              : i_ref.camera_name,
             'night'               : self.night_v.value,
             'temp'                : self.sensors_temp_av[0],
             'gain'                : self.gain_v.value,
-            'exposure'            : i_ref['exposure'],
+            'exposure'            : i_ref.exposure,
             'stable_exposure'     : int(self.target_adu_found),
-            'target_adu'          : i_ref['target_adu'],
+            'target_adu'          : i_ref.target_adu,
             'current_adu_target'  : self.current_adu_target,
             'current_adu'         : adu,
             'adu_average'         : adu_average,
-            'sqm'                 : i_ref['sqm_value'],
-            'stars'               : len(i_ref['stars']),
-            'time'                : i_ref['exp_date'].strftime('%s'),
-            'tz'                  : str(i_ref['exp_date'].astimezone().tzinfo),
-            'utc_offset'          : i_ref['exp_date'].astimezone().utcoffset().total_seconds(),
-            'sqm_data'            : self.getSqmData(i_ref['camera_id']),
-            'stars_data'          : self.getStarsData(i_ref['camera_id']),
+            'sqm'                 : i_ref.sqm_value,
+            'stars'               : len(i_ref.stars),
+            'time'                : i_ref.exp_date.strftime('%s'),
+            'tz'                  : str(i_ref.exp_date.astimezone().tzinfo),
+            'utc_offset'          : i_ref.exp_date.astimezone().utcoffset().total_seconds(),
+            'sqm_data'            : self.getSqmData(i_ref.camera_id),
+            'stars_data'          : self.getStarsData(i_ref.camera_id),
             'latitude'            : self.position_av[0],
             'longitude'           : self.position_av[1],
             'elevation'           : int(self.position_av[2]),
             'sidereal_time'       : self.astrometric_data['sidereal_time'],
-            'kpindex'             : i_ref['kpindex'],
-            'ovation_max'         : i_ref['ovation_max'],
-            'smoke_rating'        : constants.SMOKE_RATING_MAP_STR[i_ref['smoke_rating']],
+            'kpindex'             : i_ref.kpindex,
+            'aurora_mag_bt'       : i_ref.aurora_mag_bt,
+            'aurora_mag_gsm_bz'   : i_ref.aurora_mag_gsm_bz,
+            'aurora_plasma_density' : i_ref.aurora_plasma_density,
+            'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+            'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+            'aurora_n_hemi_gw'    : i_ref.aurora_n_hemi_gw,
+            'aurora_s_hemi_gw'    : i_ref.aurora_s_hemi_gw,
+            'ovation_max'         : i_ref.ovation_max,
+            'smoke_rating'        : constants.SMOKE_RATING_MAP_STR[i_ref.smoke_rating],
             'aircraft'            : len(self.adsb_aircraft_list),
         }
+
+
+        # system temp sensors
+        for i, v in enumerate(self.sensors_temp_av):
+            sensor_topic = 'sensor_temp_{0:d}'.format(i)
+            metadata[sensor_topic] = v
+
+
+        # user sensors
+        for i, v in enumerate(self.sensors_user_av):
+            sensor_topic = 'sensor_user_{0:d}'.format(i)
+            metadata[sensor_topic] = v
 
 
         f_tmp_metadata = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
@@ -980,9 +1032,20 @@ class ImageWorker(Process):
 
 
         file_data_dict = {
-            'timestamp'    : i_ref['exp_date'],
-            'ts'           : i_ref['exp_date'],  # shortcut
+            'timestamp'    : i_ref.exp_date,
+            'ts'           : i_ref.exp_date,  # shortcut
+            'camera_uuid'  : i_ref.camera_uuid,
+            'camera_id'    : i_ref.camera_id,
         }
+
+
+        if self.night_v.value:
+            file_data_dict['timeofday'] = 'night'
+            file_data_dict['tod'] = 'night'
+        else:
+            file_data_dict['timeofday'] = 'day'
+            file_data_dict['tod'] = 'day'
+
 
         # Replace parameters in names
         remote_dir = self.config['FILETRANSFER']['REMOTE_METADATA_FOLDER'].format(**file_data_dict)
@@ -1007,8 +1070,6 @@ class ImageWorker(Process):
         db.session.commit()
 
         self.upload_q.put({'task_id' : upload_task.id})
-
-
 
 
     def getSqmData(self, camera_id):
@@ -1060,23 +1121,23 @@ class ImageWorker(Process):
 
 
     def write_fit(self, i_ref, camera):
-        data = i_ref['hdulist'][0].data
+        data = i_ref.hdulist[0].data
         image_height, image_width = data.shape[:2]
 
 
         f_tmpfile = tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.fit')
 
-        i_ref['hdulist'].writeto(f_tmpfile)
+        i_ref.hdulist.writeto(f_tmpfile)
         f_tmpfile.close()
 
         tmpfile_p = Path(f_tmpfile.name)
 
 
-        date_str = i_ref['exp_date'].strftime('%Y%m%d_%H%M%S')
+        date_str = i_ref.exp_date.strftime('%Y%m%d_%H%M%S')
         # raw light
-        folder = self._getImageFolder(i_ref['exp_date'], i_ref['day_date'], camera, 'fits')
+        folder = self._getImageFolder(i_ref.exp_date, i_ref.day_date, camera, 'fits')
         filename = folder.joinpath(self.filename_t.format(
-            i_ref['camera_id'],
+            i_ref.camera_id,
             date_str,
             'fit',
         ))
@@ -1084,32 +1145,39 @@ class ImageWorker(Process):
 
         fits_metadata = {
             'type'       : constants.FITS_IMAGE,
-            'createDate' : i_ref['exp_date'].timestamp(),
-            'dayDate'    : i_ref['day_date'].strftime('%Y%m%d'),
-            'utc_offset' : i_ref['exp_date'].astimezone().utcoffset().total_seconds(),
-            'exposure'   : i_ref['exposure'],
+            'createDate' : int(i_ref.exp_date.timestamp()),
+            'dayDate'    : i_ref.day_date.strftime('%Y%m%d'),
+            'utc_offset' : i_ref.exp_date.astimezone().utcoffset().total_seconds(),
+            'exposure'   : i_ref.exposure,
             'gain'       : self.gain_v.value,
             'binmode'    : self.bin_v.value,
             'night'      : bool(self.night_v.value),
             'height'     : image_height,
             'width'      : image_width,
-            'camera_uuid': i_ref['camera_uuid'],
+            'camera_uuid': i_ref.camera_uuid,
         }
 
         fits_metadata['data'] = {
             'moonmode'        : bool(self.moonmode_v.value),
             'moonphase'       : self.astrometric_data['moon_phase'],
-            'sqm'             : i_ref['sqm_value'],
-            'stars'           : len(i_ref['stars']),
-            'detections'      : len(i_ref['lines']),
-            'kpindex'         : i_ref['kpindex'],
-            'ovation_max'     : i_ref['ovation_max'],
-            'smoke_rating'    : i_ref['smoke_rating'],
+            'sqm'             : i_ref.sqm_value,
+            'stars'           : len(i_ref.stars),
+            'detections'      : len(i_ref.lines),
+            'kpindex'         : i_ref.kpindex,
+            'ovation_max'     : i_ref.ovation_max,
+            'smoke_rating'    : i_ref.smoke_rating,
+            'aurora_mag_bt'     : i_ref.aurora_mag_bt,
+            'aurora_mag_gsm_bz' : i_ref.aurora_mag_gsm_bz,
+            'aurora_plasma_density' : i_ref.aurora_plasma_density,
+            'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+            'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+            'aurora_n_hemi_gw'  : i_ref.aurora_n_hemi_gw,
+            'aurora_s_hemi_gw'  : i_ref.aurora_s_hemi_gw,
         }
 
         fits_entry = self._miscDb.addFitsImage(
             filename.relative_to(self.image_dir),
-            i_ref['camera_id'],
+            i_ref.camera_id,
             fits_metadata,
         )
 
@@ -1131,7 +1199,7 @@ class ImageWorker(Process):
         filename.chmod(0o644)
 
         # set mtime to original exposure time
-        #os.utime(str(filename), (i_ref['exp_date'].timestamp(), i_ref['exp_date'].timestamp()))
+        #os.utime(str(filename), (i_ref.exp_date.timestamp(), i_ref.exp_date.timestamp()))
 
         tmpfile_p.unlink()
 
@@ -1154,14 +1222,15 @@ class ImageWorker(Process):
         tmpfile_name = Path(f_tmpfile.name)
 
 
-        data = self.image_processor.non_stacked_image
+        data = i_ref.opencv_data
+
         image_height, image_width = data.shape[:2]
         max_bit_depth = self.image_processor.max_bit_depth
 
-        if i_ref['image_bitpix'] == 8:
+        if i_ref.image_bitpix == 8:
             # nothing to scale
             scaled_data = data
-        elif i_ref['image_bitpix'] == 16:
+        elif i_ref.image_bitpix == 16:
             logger.info('Upscaling data from %d to 16 bit', max_bit_depth)
             shift_factor = 16 - max_bit_depth
             scaled_data = numpy.left_shift(data, shift_factor)
@@ -1183,11 +1252,11 @@ class ImageWorker(Process):
         write_img_start = time.time()
 
         if self.config['IMAGE_EXPORT_RAW'] in ('jpg', 'jpeg'):
-            if i_ref['image_bitpix'] == 8:
+            if i_ref.image_bitpix == 8:
                 scaled_data_8 = scaled_data
             else:
                 # jpeg has to be 8 bits
-                logger.info('Resampling image from %d to 8 bits', i_ref['image_bitpix'])
+                logger.info('Resampling image from %d to 8 bits', i_ref.image_bitpix)
 
                 #div_factor = int((2 ** max_bit_depth) / 255)
                 #scaled_data_8 = (scaled_data / div_factor).astype(numpy.uint8)
@@ -1232,7 +1301,7 @@ class ImageWorker(Process):
 
         day_folder = export_dir.joinpath(
             'ccd_{0:s}'.format(camera.uuid),
-            '{0:s}'.format(i_ref['day_date'].strftime('%Y%m%d')),
+            '{0:s}'.format(i_ref.day_date.strftime('%Y%m%d')),
             timeofday_str,
         )
 
@@ -1240,18 +1309,18 @@ class ImageWorker(Process):
             day_folder.mkdir(mode=0o755, parents=True)
 
 
-        hour_str = i_ref['exp_date'].strftime('%d_%H')
+        hour_str = i_ref.exp_date.strftime('%d_%H')
 
         hour_folder = day_folder.joinpath('{0:s}'.format(hour_str))
         if not hour_folder.exists():
             hour_folder.mkdir(mode=0o755)
 
 
-        date_str = i_ref['exp_date'].strftime('%Y%m%d_%H%M%S')
+        date_str = i_ref.exp_date.strftime('%Y%m%d_%H%M%S')
 
         raw_filename_t = 'raw_{0:s}'.format(self.filename_t)
         filename = hour_folder.joinpath(raw_filename_t.format(
-            i_ref['camera_id'],
+            i_ref.camera_id,
             date_str,
             self.config['IMAGE_EXPORT_RAW'],  # file suffix
         ))
@@ -1259,27 +1328,34 @@ class ImageWorker(Process):
 
         raw_metadata = {
             'type'       : constants.RAW_IMAGE,
-            'createDate' : i_ref['exp_date'].timestamp(),
-            'dayDate'    : i_ref['day_date'].strftime('%Y%m%d'),
-            'utc_offset' : i_ref['exp_date'].astimezone().utcoffset().total_seconds(),
-            'exposure'   : i_ref['exposure'],
+            'createDate' : int(i_ref.exp_date.timestamp()),
+            'dayDate'    : i_ref.day_date.strftime('%Y%m%d'),
+            'utc_offset' : i_ref.exp_date.astimezone().utcoffset().total_seconds(),
+            'exposure'   : i_ref.exposure,
             'gain'       : self.gain_v.value,
             'binmode'    : self.bin_v.value,
             'night'      : bool(self.night_v.value),
             'height'     : image_height,
             'width'      : image_width,
-            'camera_uuid': i_ref['camera_uuid'],
+            'camera_uuid': i_ref.camera_uuid,
         }
 
         raw_metadata['data'] = {
             'moonmode'        : bool(self.moonmode_v.value),
             'moonphase'       : self.astrometric_data['moon_phase'],
-            'sqm'             : i_ref['sqm_value'],
-            'stars'           : len(i_ref['stars']),
-            'detections'      : len(i_ref['lines']),
-            'kpindex'         : i_ref['kpindex'],
-            'ovation_max'     : i_ref['ovation_max'],
-            'smoke_rating'    : i_ref['smoke_rating'],
+            'sqm'             : i_ref.sqm_value,
+            'stars'           : len(i_ref.stars),
+            'detections'      : len(i_ref.lines),
+            'kpindex'         : i_ref.kpindex,
+            'ovation_max'     : i_ref.ovation_max,
+            'smoke_rating'    : i_ref.smoke_rating,
+            'aurora_mag_bt'     : i_ref.aurora_mag_bt,
+            'aurora_mag_gsm_bz' : i_ref.aurora_mag_gsm_bz,
+            'aurora_plasma_density' : i_ref.aurora_plasma_density,
+            'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+            'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+            'aurora_n_hemi_gw'  : i_ref.aurora_n_hemi_gw,
+            'aurora_s_hemi_gw'  : i_ref.aurora_s_hemi_gw,
         }
 
         try:
@@ -1290,7 +1366,7 @@ class ImageWorker(Process):
 
         raw_entry = self._miscDb.addRawImage(
             raw_filename,
-            i_ref['camera_id'],
+            i_ref.camera_id,
             raw_metadata,
         )
 
@@ -1309,7 +1385,7 @@ class ImageWorker(Process):
         tmpfile_name.unlink()
 
         # set mtime to original exposure time
-        #os.utime(str(filename), (i_ref['exp_date'].timestamp(), i_ref['exp_date'].timestamp()))
+        #os.utime(str(filename), (i_ref.exp_date.timestamp(), i_ref.exp_date.timestamp()))
 
         self._miscUpload.s3_upload_raw(raw_entry, raw_metadata)
         self._miscUpload.upload_raw_image(raw_entry)
@@ -1347,7 +1423,7 @@ class ImageWorker(Process):
         tmpfile_name = Path(f_tmpfile.name)
 
 
-        write_img_start = time.time()
+        #write_img_start = time.time()
 
         # write to temporary file
         if self.config['IMAGE_FILE_TYPE'] in ('jpg', 'jpeg'):
@@ -1371,8 +1447,8 @@ class ImageWorker(Process):
             tmpfile_name.unlink()
             raise Exception('Unknown file type: %s', self.config['IMAGE_FILE_TYPE'])
 
-        write_img_elapsed_s = time.time() - write_img_start
-        logger.info('Image compressed in %0.4f s', write_img_elapsed_s)
+        #write_img_elapsed_s = time.time() - write_img_start
+        #logger.info('Image compressed in %0.4f s', write_img_elapsed_s)
 
 
         ### Always write the latest file for web access
@@ -1403,10 +1479,10 @@ class ImageWorker(Process):
 
 
         ### Write the timelapse file
-        folder = self._getImageFolder(i_ref['exp_date'], i_ref['day_date'], camera, 'exposures')
+        folder = self._getImageFolder(i_ref.exp_date, i_ref.day_date, camera, 'exposures')
 
-        date_str = i_ref['exp_date'].strftime('%Y%m%d_%H%M%S')
-        filename = folder.joinpath(self.filename_t.format(i_ref['camera_id'], date_str, self.config['IMAGE_FILE_TYPE']))
+        date_str = i_ref.exp_date.strftime('%Y%m%d_%H%M%S')
+        filename = folder.joinpath(self.filename_t.format(i_ref.camera_id, date_str, self.config['IMAGE_FILE_TYPE']))
 
         #logger.info('Image filename: %s', filename)
 
@@ -1423,7 +1499,7 @@ class ImageWorker(Process):
 
 
         # set mtime to original exposure time
-        #os.utime(str(filename), (i_ref['exp_date'].timestamp(), i_ref['exp_date'].timestamp()))
+        #os.utime(str(filename), (i_ref.exp_date.timestamp(), i_ref.exp_date.timestamp()))
 
         #logger.info('Finished writing files')
 
@@ -1434,25 +1510,32 @@ class ImageWorker(Process):
         status = {
             'name'                : 'indi_json',
             'class'               : 'ccd',
-            'device'              : i_ref['camera_name'],
+            'device'              : i_ref.camera_name,
             'night'               : self.night_v.value,
             'temp'                : self.sensors_temp_av[0],
             'gain'                : self.gain_v.value,
-            'exposure'            : i_ref['exposure'],
+            'exposure'            : i_ref.exposure,
             'stable_exposure'     : int(self.target_adu_found),
-            'target_adu'          : i_ref['target_adu'],
+            'target_adu'          : i_ref.target_adu,
             'current_adu_target'  : self.current_adu_target,
             'current_adu'         : adu,
             'adu_average'         : adu_average,
-            'sqm'                 : i_ref['sqm_value'],
-            'stars'               : len(i_ref['stars']),
-            'time'                : i_ref['exp_date'].strftime('%s'),
+            'sqm'                 : i_ref.sqm_value,
+            'stars'               : len(i_ref.stars),
+            'time'                : i_ref.exp_date.strftime('%s'),
             'latitude'            : self.position_av[0],
             'longitude'           : self.position_av[1],
             'elevation'           : int(self.position_av[2]),
-            'kpindex'             : i_ref['kpindex'],
-            'ovation_max'         : int(i_ref['ovation_max']),
-            'smoke_rating'        : constants.SMOKE_RATING_MAP_STR[i_ref['smoke_rating']],
+            'kpindex'             : i_ref.kpindex,
+            'ovation_max'         : int(i_ref.ovation_max),
+            'aurora_mag_bt'       : i_ref.aurora_mag_bt,
+            'aurora_mag_gsm_bz'   : i_ref.aurora_mag_gsm_bz,
+            'aurora_plasma_density' : i_ref.aurora_plasma_density,
+            'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+            'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+            'aurora_n_hemi_gw'    : i_ref.aurora_n_hemi_gw,
+            'aurora_s_hemi_gw'    : i_ref.aurora_s_hemi_gw,
+            'smoke_rating'        : constants.SMOKE_RATING_MAP_STR[i_ref.smoke_rating],
             'aircraft'            : len(self.adsb_aircraft_list),
 
         }
@@ -1517,7 +1600,7 @@ class ImageWorker(Process):
         tmpfile_name = Path(f_tmpfile.name)
 
 
-        write_img_start = time.time()
+        #write_img_start = time.time()
 
         # write to temporary file
         if self.config['IMAGE_FILE_TYPE'] in ('jpg', 'jpeg'):
@@ -1541,8 +1624,8 @@ class ImageWorker(Process):
             tmpfile_name.unlink()
             raise Exception('Unknown file type: %s', self.config['IMAGE_FILE_TYPE'])
 
-        write_img_elapsed_s = time.time() - write_img_start
-        logger.info('Panorama image compressed in %0.4f s', write_img_elapsed_s)
+        #write_img_elapsed_s = time.time() - write_img_start
+        #logger.info('Panorama image compressed in %0.4f s', write_img_elapsed_s)
 
 
         ### Always write the latest file for web access
@@ -1572,45 +1655,52 @@ class ImageWorker(Process):
 
 
         ### Write the panorama file
-        folder = self._getImageFolder(i_ref['exp_date'], i_ref['day_date'], camera, 'panoramas')
+        folder = self._getImageFolder(i_ref.exp_date, i_ref.day_date, camera, 'panoramas')
 
 
         panorama_filename_t = 'panorama_{0:s}'.format(self.filename_t)
-        date_str = i_ref['exp_date'].strftime('%Y%m%d_%H%M%S')
-        filename = folder.joinpath(panorama_filename_t.format(i_ref['camera_id'], date_str, self.config['IMAGE_FILE_TYPE']))
+        date_str = i_ref.exp_date.strftime('%Y%m%d_%H%M%S')
+        filename = folder.joinpath(panorama_filename_t.format(i_ref.camera_id, date_str, self.config['IMAGE_FILE_TYPE']))
 
         #logger.info('Panorama filename: %s', filename)
 
 
         panorama_metadata = {
             'type'       : constants.PANORAMA_IMAGE,
-            'createDate' : i_ref['exp_date'].timestamp(),
-            'dayDate'    : i_ref['day_date'].strftime('%Y%m%d'),
-            'utc_offset' : i_ref['exp_date'].astimezone().utcoffset().total_seconds(),
-            'exposure'   : i_ref['exposure'],
+            'createDate' : int(i_ref.exp_date.timestamp()),
+            'dayDate'    : i_ref.day_date.strftime('%Y%m%d'),
+            'utc_offset' : i_ref.exp_date.astimezone().utcoffset().total_seconds(),
+            'exposure'   : i_ref.exposure,
             'gain'       : self.gain_v.value,
             'binmode'    : self.bin_v.value,
             'night'      : bool(self.night_v.value),
             'height'     : panorama_height,
             'width'      : panorama_width,
-            'camera_uuid': i_ref['camera_uuid'],
+            'camera_uuid': i_ref.camera_uuid,
         }
 
         panorama_metadata['data'] = {
             'moonmode'        : bool(self.moonmode_v.value),
             'moonphase'       : self.astrometric_data['moon_phase'],
-            'sqm'             : i_ref['sqm_value'],
-            'stars'           : len(i_ref['stars']),
-            'detections'      : len(i_ref['lines']),
-            'kpindex'         : i_ref['kpindex'],
-            'ovation_max'     : i_ref['ovation_max'],
-            'smoke_rating'    : i_ref['smoke_rating'],
+            'sqm'             : i_ref.sqm_value,
+            'stars'           : len(i_ref.stars),
+            'detections'      : len(i_ref.lines),
+            'kpindex'         : i_ref.kpindex,
+            'ovation_max'     : i_ref.ovation_max,
+            'smoke_rating'    : i_ref.smoke_rating,
+            'aurora_mag_bt'     : i_ref.aurora_mag_bt,
+            'aurora_mag_gsm_bz' : i_ref.aurora_mag_gsm_bz,
+            'aurora_plasma_density' : i_ref.aurora_plasma_density,
+            'aurora_plasma_speed'   : i_ref.aurora_plasma_speed,
+            'aurora_plasma_temp'    : i_ref.aurora_plasma_temp,
+            'aurora_n_hemi_gw'  : i_ref.aurora_n_hemi_gw,
+            'aurora_s_hemi_gw'  : i_ref.aurora_s_hemi_gw,
         }
 
 
         panorama_entry = self._miscDb.addPanoramaImage(
             filename.relative_to(self.image_dir),
-            i_ref['camera_id'],
+            i_ref.camera_id,
             panorama_metadata,
         )
 
@@ -1628,12 +1718,87 @@ class ImageWorker(Process):
 
 
         # set mtime to original exposure time
-        #os.utime(str(filename), (i_ref['exp_date'].timestamp(), i_ref['exp_date'].timestamp()))
+        #os.utime(str(filename), (i_ref.exp_date.timestamp(), i_ref.exp_date.timestamp()))
 
         self._miscUpload.syncapi_panorama(panorama_entry, panorama_metadata)  # syncapi before s3
         self._miscUpload.s3_upload_panorama(panorama_entry, panorama_metadata)
         self._miscUpload.mqtt_publish_image(filename, 'panorama', {})
         self._miscUpload.upload_panorama(panorama_entry)
+
+
+    def write_realtime_keogram(self, data, camera):
+        if isinstance(data, type(None)):
+            logger.warning('Realtime keogram data empty')
+            return
+
+
+        save_interval = self.config.get('REALTIME_KEOGRAM', {}).get('SAVE_INTERVAL', 25)
+        if self.image_count % save_interval == 0:
+            # store keogram data every X images
+            self.image_processor.realtimeKeogramDataSave()
+
+
+        keogram_height, keogram_width = data.shape[:2]
+
+        # scale size
+        h_scale_factor = int(self.config.get('KEOGRAM_H_SCALE', 100))
+        v_scale_factor = int(self.config.get('KEOGRAM_V_SCALE', 33))
+        new_width = int(keogram_width * h_scale_factor / 100)
+        new_height = int(keogram_height * v_scale_factor / 100)
+
+        #logger.info('Keogram: %d x %d', new_width, new_height)
+        data = cv2.resize(data, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+
+        f_tmpfile = tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.{0}'.format(self.config['IMAGE_FILE_TYPE']))
+        f_tmpfile.close()
+
+        tmpfile_name = Path(f_tmpfile.name)
+
+
+        #write_img_start = time.time()
+
+        # write to temporary file
+        if self.config['IMAGE_FILE_TYPE'] in ('jpg', 'jpeg'):
+            img_rgb = Image.fromarray(cv2.cvtColor(data, cv2.COLOR_BGR2RGB))
+            img_rgb.save(str(tmpfile_name), quality=self.config['IMAGE_FILE_COMPRESSION']['jpg'])
+        elif self.config['IMAGE_FILE_TYPE'] in ('png',):
+            # opencv is faster than Pillow with PNG
+            cv2.imwrite(str(tmpfile_name), data, [cv2.IMWRITE_PNG_COMPRESSION, self.config['IMAGE_FILE_COMPRESSION']['png']])
+        elif self.config['IMAGE_FILE_TYPE'] in ('webp',):
+            img_rgb = Image.fromarray(cv2.cvtColor(data, cv2.COLOR_BGR2RGB))
+            img_rgb.save(str(tmpfile_name), quality=90, lossless=False)
+        elif self.config['IMAGE_FILE_TYPE'] in ('tif', 'tiff'):
+            # exif does not appear to work with tiff
+            img_rgb = Image.fromarray(cv2.cvtColor(data, cv2.COLOR_BGR2RGB))
+            img_rgb.save(str(tmpfile_name), compression='tiff_lzw')
+        else:
+            tmpfile_name.unlink()
+            raise Exception('Unknown file type: %s', self.config['IMAGE_FILE_TYPE'])
+
+        #write_img_elapsed_s = time.time() - write_img_start
+        #logger.info('Image compressed in %0.4f s', write_img_elapsed_s)
+
+
+        ccd_folder = self.image_dir.joinpath('ccd_{0:s}'.format(camera.uuid))
+
+        if not ccd_folder.exists():
+            ccd_folder.mkdir(mode=0o755, parents=True)
+
+
+        ### Always write the latest file for web access
+        keogram_file = ccd_folder.joinpath('realtime_keogram.{0:s}'.format(self.config['IMAGE_FILE_TYPE']))
+
+        try:
+            keogram_file.unlink()
+        except FileNotFoundError:
+            pass
+
+
+        shutil.copy2(str(tmpfile_name), str(keogram_file))
+        keogram_file.chmod(0o644)
+
+        tmpfile_name.unlink()
 
 
     def calculate_exposure(self, adu, exposure):
@@ -1686,12 +1851,11 @@ class ImageWorker(Process):
         self.hist_adu.append(adu)
         self.hist_adu = self.hist_adu[(history_max_vals * -1):]  # remove oldest values, up to history_max_vals
 
-        logger.info('Current target ADU: %0.2f (%0.2f/%0.2f)', self.current_adu_target, current_adu_target_min, current_adu_target_max)
-        logger.info('Current ADU history: (%d) [%s]', len(self.hist_adu), ', '.join(['{0:0.2f}'.format(x) for x in self.hist_adu]))
-
-
         adu_average = functools.reduce(lambda a, b: a + b, self.hist_adu) / len(self.hist_adu)
-        logger.info('ADU average: %0.2f', adu_average)
+
+        #logger.info('ADU average: %0.2f', adu_average)
+        #logger.info('Current target ADU: %0.2f (%0.2f/%0.2f)', self.current_adu_target, current_adu_target_min, current_adu_target_max)
+        #logger.info('Current ADU history: (%d) [%s]', len(self.hist_adu), ', '.join(['{0:0.2f}'.format(x) for x in self.hist_adu]))
 
 
         ### Need at least x values to continue
@@ -1741,4 +1905,38 @@ class ImageWorker(Process):
         with self.exposure_av.get_lock():
             self.exposure_av[0] = new_exposure
 
+
+    def save_longterm_keogram_data(self, exp_date, camera_id):
+        if self.image_processor.focus_mode:
+            # disable processing in focus mode
+            return
+
+        if not self.config.get('LONGTERM_KEOGRAM', {}).get('ENABLE', True):
+            logger.info('Long term keogram data disabled')
+            return
+
+        offset_x = self.config.get('LONGTERM_KEOGRAM', {}).get('OFFSET_X', 0)
+        offset_y = self.config.get('LONGTERM_KEOGRAM', {}).get('OFFSET_Y', 0)
+
+        image_height, image_width = self.image_processor.image.shape[:2]
+
+
+        x = int(image_width / 2) + offset_x
+        y = int(image_height / 2) - offset_y  # minus
+
+
+        rgb_pixel_list = list()
+        for p_y in range(5):
+            pixel = self.image_processor.image[y + p_y, x]
+            rgb_pixel_list.append([int(pixel[2]), int(pixel[1]), int(pixel[0])])  # bgr
+
+
+        self._miscDb.add_long_term_keogram_data(
+            exp_date,
+            camera_id,
+            rgb_pixel_list,
+        )
+
+
+        return rgb_pixel_list
 

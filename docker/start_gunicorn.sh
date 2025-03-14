@@ -17,6 +17,11 @@ ALLSKY_SERVICE_NAME="indi-allsky"
 GUNICORN_SERVICE_NAME="gunicorn-indi-allsky"
 
 
+# ensure correct permissions
+sudo chown allsky:allsky "$ALLSKY_ETC"
+sudo chown allsky:allsky "$DB_FOLDER"
+
+
 if [ "${INDIALLSKY_MARIADB_SSL:-false}" == "true" ]; then
     SQLALCHEMY_DATABASE_URI="mysql+mysqlconnector://${MARIADB_USER}:${MARIADB_PASSWORD}@${INDIALLSKY_MARIADB_HOST}:${INDIALLSKY_MARIADB_PORT}/${MARIADB_DATABASE}?ssl_ca=/etc/ssl/certs/ca-certificates.crt&ssl_verify_identity&charset=${INDIALLSKY_MARIADB_CHARSET}&collation=${INDIALLSKY_MARIADB_COLLATION}"
     #SQLALCHEMY_DATABASE_URI="mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@${INDIALLSKY_MARIADB_HOST}:${INDIALLSKY_MARIADB_PORT}/${MARIADB_DATABASE}?ssl_ca=/etc/ssl/certs/ca-certificates.crt&ssl_verify_identity=false&charset=${INDIALLSKY_MARIADB_CHARSET}"
@@ -61,10 +66,20 @@ json_pp < "$ALLSKY_ETC/flask.json" >/dev/null
 cd "$ALLSKY_DIRECTORY"
 
 
+# shellcheck disable=SC1091
+source /home/allsky/venv/bin/activate
+
+
 if [ -z "${INDIALLSKY_GUNICORN_NO_WAIT:-}" ]; then
     # wait on database
     for X in $(seq 12); do
         echo "Waiting on database ($((65-(5*X)))s)"
+        sleep 5
+    done
+else
+    # shorter wait
+    for X in $(seq 2); do
+        echo "Waiting on database ($((15-(5*X)))s)"
         sleep 5
     done
 fi
@@ -82,11 +97,11 @@ flask db upgrade head
 
 
 # bootstrap initial config
-"${ALLSKY_DIRECTORY}/config.py" bootstrap || true
+./config.py bootstrap || true
 
 # dump config for processing
 TMP_CONFIG_DUMP=$(mktemp --suffix=.json)
-"${ALLSKY_DIRECTORY}/config.py" dump > "$TMP_CONFIG_DUMP"
+./config.py dump > "$TMP_CONFIG_DUMP"
 
 
 # replace the flask IMAGE_FOLDER
@@ -105,7 +120,7 @@ jq \
 
 
 # load all changes
-"${ALLSKY_DIRECTORY}/config.py" load -c "$TMP_IMAGE_FOLDER" --force
+./config.py load -c "$TMP_IMAGE_FOLDER" --force
 [[ -f "$TMP_CONFIG_DUMP" ]] && rm -f "$TMP_CONFIG_DUMP"
 [[ -f "$TMP_IMAGE_FOLDER" ]] && rm -f "$TMP_IMAGE_FOLDER"
 

@@ -28,6 +28,7 @@ from flask import session
 from flask import jsonify
 from flask import Blueprint
 from flask import redirect
+from flask import Response
 from flask import url_for
 from flask import send_from_directory
 from flask import current_app as app
@@ -53,6 +54,7 @@ from .models import IndiAllSkyDbFitsImageTable
 from .models import IndiAllSkyDbPanoramaImageTable
 from .models import IndiAllSkyDbPanoramaVideoTable
 from .models import IndiAllSkyDbThumbnailTable
+from .models import IndiAllSkyDbLongTermKeogramTable
 from .models import IndiAllSkyDbTaskQueueTable
 from .models import IndiAllSkyDbNotificationTable
 from .models import IndiAllSkyDbUserTable
@@ -78,6 +80,8 @@ from sqlalchemy.sql.expression import null as sa_null
 from .forms import IndiAllskyConfigForm
 from .forms import IndiAllskyImageViewer
 from .forms import IndiAllskyImageViewerPreload
+from .forms import IndiAllskyFitsImageViewer
+from .forms import IndiAllskyFitsImageViewerPreload
 from .forms import IndiAllskyGalleryViewer
 from .forms import IndiAllskyGalleryViewerPreload
 from .forms import IndiAllskyVideoViewer
@@ -85,7 +89,8 @@ from .forms import IndiAllskyVideoViewerPreload
 from .forms import IndiAllskyMiniVideoViewer
 from .forms import IndiAllskyMiniVideoViewerPreload
 from .forms import IndiAllskySystemInfoForm
-from .forms import IndiAllskyHistoryForm
+from .forms import IndiAllskyLoopHistoryForm
+from .forms import IndiAllskyChartHistoryForm
 from .forms import IndiAllskySetDateTimeForm
 from .forms import IndiAllskyTimelapseGeneratorForm
 from .forms import IndiAllskyFocusForm
@@ -96,6 +101,7 @@ from .forms import IndiAllskyImageProcessingForm
 from .forms import IndiAllskyCameraSimulatorForm
 from .forms import IndiAllskyFocusControllerForm
 from .forms import IndiAllskyMiniTimelapseForm
+from .forms import IndiAllskyLongTermKeogramForm
 
 from .base_views import BaseView
 from .base_views import TemplateView
@@ -155,8 +161,8 @@ class IndexView(TemplateView):
         context['camera_id'] = self.camera.id
         context['latest_image_view'] = self.latest_image_view
 
-        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0) * 1000)
-        context['refreshInterval'] = refreshInterval_ms
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
 
         return context
 
@@ -194,8 +200,10 @@ class JsonLatestImageView(JsonView):
 
         data = {
             'latest_image' : {
-                'url' : None,
+                'url'     : None,
                 'message' : no_image_message,
+                'width'   : 1,
+                'height'  : 1,
             },
         }
 
@@ -275,9 +283,11 @@ class JsonLatestImageView(JsonView):
 
 
         # use database
-        latest_image_url = self.getLatestImage(camera_id, history_seconds)
-        if latest_image_url:
-            data['latest_image']['url'] = latest_image_url
+        latest_image_data = self.getLatestImage(camera_id, history_seconds)
+        if latest_image_data.get('url'):
+            data['latest_image']['url'] = latest_image_data['url']
+            data['latest_image']['width'] = latest_image_data['width']
+            data['latest_image']['height'] = latest_image_data['height']
             data['latest_image']['message'] = ''
 
 
@@ -320,17 +330,58 @@ class JsonLatestImageView(JsonView):
 
 
         if not latest_image:
-            return None
+            return {'url': None}
 
 
         try:
             url = latest_image.getUrl(s3_prefix=self.s3_prefix, local=local)
         except ValueError as e:
             app.logger.error('Error determining relative file name: %s', str(e))
-            return None
+            return {'url': None}
 
 
-        return str(url)
+        image_data = {
+            'url' : str(url),
+            'width' : latest_image.width,
+            'height' : latest_image.height,
+        }
+
+        return image_data
+
+
+class IndexImgView(TemplateView):
+    title = 'Latest'
+    latest_image_view = 'indi_allsky.js_latest_image_view'
+
+
+    def get_context(self):
+        context = super(IndexImgView, self).get_context()
+
+        context['title'] = self.title
+        context['camera_id'] = self.camera.id
+        context['latest_image_view'] = self.latest_image_view
+
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
+
+        return context
+
+
+class RealtimeKeogramView(TemplateView):
+    title = 'Realtime Keogram'
+
+
+    def get_context(self):
+        context = super(RealtimeKeogramView, self).get_context()
+
+        context['title'] = self.title
+        context['camera_id'] = self.camera.id
+        context['keogram_uri'] = str(Path('images').joinpath('ccd_{0:s}'.format(self.camera.uuid), 'realtime_keogram.{0:s}'.format(self.indi_allsky_config.get('IMAGE_FILE_TYPE', 'jpg'))))
+
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
+
+        return context
 
 
 class LatestImageRedirect(BaseView):
@@ -611,6 +662,11 @@ class LatestPanoramaView(IndexView):
     latest_image_view = 'indi_allsky.js_latest_panorama_view'
 
 
+class LatestPanoramaImgView(IndexImgView):
+    title = 'Panorama'
+    latest_image_view = 'indi_allsky.js_latest_panorama_view'
+
+
 class JsonLatestPanoramaView(JsonLatestImageView):
     model = IndiAllSkyDbPanoramaImageTable
     latest_image_t = 'images/panorama.{0}'
@@ -864,8 +920,8 @@ class SqmView(TemplateView):
 
         context['camera_id'] = self.camera.id
 
-        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0) * 1000)
-        context['refreshInterval'] = refreshInterval_ms
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
 
         return context
 
@@ -883,10 +939,10 @@ class ImageLoopView(TemplateView):
 
         context['timestamp'] = int(request.args.get('timestamp', 0))
 
-        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0) * 1000)
-        context['refreshInterval'] = refreshInterval_ms
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
 
-        context['form_history'] = IndiAllskyHistoryForm()
+        context['form_history'] = IndiAllskyLoopHistoryForm()
 
         return context
 
@@ -917,9 +973,9 @@ class JsonImageLoopView(JsonView):
 
         ts_dt = datetime.fromtimestamp(timestamp + 3)  # allow some jitter
 
-        # sanity check
-        if history_seconds > 86400:
-            history_seconds = 86400
+        # sanity check, limit to 4 hours
+        if history_seconds > 14400:
+            history_seconds = 14400
 
         data = {
             'image_list' : self.getLoopImages(camera_id, ts_dt, history_seconds),
@@ -979,8 +1035,11 @@ class JsonImageLoopView(JsonView):
                 app.logger.error('Error determining relative file name: %s', str(e))
                 continue
 
+
             data = {
-                'url'        : str(url),
+                'url'    : str(url),
+                'width'  : i.width,
+                'height' : i.height,
             }
 
 
@@ -1060,6 +1119,27 @@ class JsonImageLoopView(JsonView):
         return stars_data
 
 
+class ImageLoopImgView(TemplateView):
+    title = 'Loop'
+    image_loop_view = 'indi_allsky.js_image_loop_view'
+
+    def get_context(self):
+        context = super(ImageLoopImgView, self).get_context()
+
+        context['title'] = self.title
+        context['camera_id'] = self.camera.id
+        context['image_loop_view'] = self.image_loop_view
+
+        context['timestamp'] = int(request.args.get('timestamp', 0))
+
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
+
+        context['form_history'] = IndiAllskyLoopHistoryForm()
+
+        return context
+
+
 class PanoramaLoopView(ImageLoopView):
     title = 'Panorama Loop'
     image_loop_view = 'indi_allsky.js_panorama_loop_view'
@@ -1125,38 +1205,38 @@ class ChartView(TemplateView):
         context['camera_id'] = self.camera.id
         context['timestamp'] = int(request.args.get('timestamp', 0))
 
-        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0) * 1000)
-        context['refreshInterval'] = refreshInterval_ms
+        refreshInterval_ms = math.ceil(self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000
+        context['refreshInterval'] = refreshInterval_ms + 1000  # additional time for exposures to download
 
-        context['form_history'] = IndiAllskyHistoryForm()
-
-
-        self.update_sensor_slot_labels()
-
-        custom_1_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_1', 10)
-        custom_2_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_2', 11)
-        custom_3_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_3', 12)
-        custom_4_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_4', 13)
+        context['form_history'] = IndiAllskyChartHistoryForm()
 
 
-        # fix system temp offset
-        if custom_1_index >= 100:
-            custom_1_index -= 79
-
-        if custom_2_index >= 100:
-            custom_2_index -= 79
-
-        if custom_3_index >= 100:
-            custom_3_index -= 79
-
-        if custom_4_index >= 100:
-            custom_4_index -= 79
+        if self.camera.data:
+            camera_data = dict(self.camera.data)
+        else:
+            camera_data = dict()
 
 
-        context['label_custom_chart_1'] = self.SENSOR_SLOT_choices[custom_1_index][1]
-        context['label_custom_chart_2'] = self.SENSOR_SLOT_choices[custom_2_index][1]
-        context['label_custom_chart_3'] = self.SENSOR_SLOT_choices[custom_3_index][1]
-        context['label_custom_chart_4'] = self.SENSOR_SLOT_choices[custom_4_index][1]
+        custom_chart_1_key = camera_data.get('custom_chart_1_key', 'sensor_user_10')
+        custom_chart_2_key = camera_data.get('custom_chart_2_key', 'sensor_user_11')
+        custom_chart_3_key = camera_data.get('custom_chart_3_key', 'sensor_user_12')
+        custom_chart_4_key = camera_data.get('custom_chart_4_key', 'sensor_user_13')
+        custom_chart_5_key = camera_data.get('custom_chart_5_key', 'sensor_user_14')
+        custom_chart_6_key = camera_data.get('custom_chart_6_key', 'sensor_user_15')
+        custom_chart_7_key = camera_data.get('custom_chart_7_key', 'sensor_user_16')
+        custom_chart_8_key = camera_data.get('custom_chart_8_key', 'sensor_user_17')
+        custom_chart_9_key = camera_data.get('custom_chart_9_key', 'sensor_user_18')
+
+
+        context['label_custom_chart_1'] = camera_data.get(custom_chart_1_key, 'Unset')
+        context['label_custom_chart_2'] = camera_data.get(custom_chart_2_key, 'Unset')
+        context['label_custom_chart_3'] = camera_data.get(custom_chart_3_key, 'Unset')
+        context['label_custom_chart_4'] = camera_data.get(custom_chart_4_key, 'Unset')
+        context['label_custom_chart_5'] = camera_data.get(custom_chart_5_key, 'Unset')
+        context['label_custom_chart_6'] = camera_data.get(custom_chart_6_key, 'Unset')
+        context['label_custom_chart_7'] = camera_data.get(custom_chart_7_key, 'Unset')
+        context['label_custom_chart_8'] = camera_data.get(custom_chart_8_key, 'Unset')
+        context['label_custom_chart_9'] = camera_data.get(custom_chart_9_key, 'Unset')
 
 
         return context
@@ -1225,7 +1305,7 @@ class JsonChartView(JsonView):
                     IndiAllSkyDbImageTable.createDate < ts_dt,
                 )
             )\
-            .order_by(IndiAllSkyDbImageTable.createDate.desc())
+            .order_by(IndiAllSkyDbImageTable.createDate.asc())
 
 
         #app.logger.info('Chart SQL: %s', str(chart_query))
@@ -1241,6 +1321,11 @@ class JsonChartView(JsonView):
             'custom_2'  : [],
             'custom_3'  : [],
             'custom_4'  : [],
+            'custom_5'  : [],
+            'custom_6'  : [],
+            'custom_7'  : [],
+            'custom_8'  : [],
+            'custom_9'  : [],
             'histogram' : {
                 'red'   : [],
                 'green' : [],
@@ -1250,10 +1335,21 @@ class JsonChartView(JsonView):
         }
 
 
-        custom_1_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_1', 10)
-        custom_2_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_2', 11)
-        custom_3_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_3', 12)
-        custom_4_index = self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_4', 13)
+        if self.camera.data:
+            camera_data = dict(self.camera.data)
+        else:
+            camera_data = dict()
+
+
+        custom_chart_1_key = camera_data.get('custom_chart_1_key', 'sensor_user_10')
+        custom_chart_2_key = camera_data.get('custom_chart_2_key', 'sensor_user_11')
+        custom_chart_3_key = camera_data.get('custom_chart_3_key', 'sensor_user_12')
+        custom_chart_4_key = camera_data.get('custom_chart_4_key', 'sensor_user_13')
+        custom_chart_5_key = camera_data.get('custom_chart_5_key', 'sensor_user_14')
+        custom_chart_6_key = camera_data.get('custom_chart_6_key', 'sensor_user_15')
+        custom_chart_7_key = camera_data.get('custom_chart_7_key', 'sensor_user_16')
+        custom_chart_8_key = camera_data.get('custom_chart_8_key', 'sensor_user_17')
+        custom_chart_9_key = camera_data.get('custom_chart_9_key', 'sensor_user_18')
 
 
         for i in chart_query:
@@ -1311,16 +1407,10 @@ class JsonChartView(JsonView):
 
 
             # custom chart 1
-            if custom_1_index < 100:
-                try:
-                    custom_1_y = i.data['sensor_user_{0:d}'.format(custom_1_index)]
-                except KeyError:
-                    custom_1_y = 0
-            else:
-                try:
-                    custom_1_y = i.data['sensor_temp_{0:d}'.format(custom_1_index - 100)]
-                except KeyError:
-                    custom_1_y = 0
+            try:
+                custom_1_y = i.data[custom_chart_1_key]
+            except KeyError:
+                custom_1_y = 0
 
             custom_1_data = {
                 'x' : x,
@@ -1330,16 +1420,10 @@ class JsonChartView(JsonView):
 
 
             # custom chart 2
-            if custom_2_index < 100:
-                try:
-                    custom_2_y = i.data['sensor_user_{0:d}'.format(custom_2_index)]
-                except KeyError:
-                    custom_2_y = 0
-            else:
-                try:
-                    custom_2_y = i.data['sensor_temp_{0:d}'.format(custom_2_index - 100)]
-                except KeyError:
-                    custom_2_y = 0
+            try:
+                custom_2_y = i.data[custom_chart_2_key]
+            except KeyError:
+                custom_2_y = 0
 
             custom_2_data = {
                 'x' : x,
@@ -1349,16 +1433,10 @@ class JsonChartView(JsonView):
 
 
             # custom chart 3
-            if custom_3_index < 100:
-                try:
-                    custom_3_y = i.data['sensor_user_{0:d}'.format(custom_3_index)]
-                except KeyError:
-                    custom_3_y = 0
-            else:
-                try:
-                    custom_3_y = i.data['sensor_temp_{0:d}'.format(custom_3_index - 100)]
-                except KeyError:
-                    custom_3_y = 0
+            try:
+                custom_3_y = i.data[custom_chart_3_key]
+            except KeyError:
+                custom_3_y = 0
 
             custom_3_data = {
                 'x' : x,
@@ -1368,16 +1446,10 @@ class JsonChartView(JsonView):
 
 
             # custom chart 4
-            if custom_4_index < 100:
-                try:
-                    custom_4_y = i.data['sensor_user_{0:d}'.format(custom_4_index)]
-                except KeyError:
-                    custom_4_y = 0
-            else:
-                try:
-                    custom_4_y = i.data['sensor_temp_{0:d}'.format(custom_4_index - 100)]
-                except KeyError:
-                    custom_4_y = 0
+            try:
+                custom_4_y = i.data[custom_chart_4_key]
+            except KeyError:
+                custom_4_y = 0
 
             custom_4_data = {
                 'x' : x,
@@ -1385,6 +1457,70 @@ class JsonChartView(JsonView):
             }
             chart_data['custom_4'].append(custom_4_data)
 
+
+            # custom chart 5
+            try:
+                custom_5_y = i.data[custom_chart_5_key]
+            except KeyError:
+                custom_5_y = 0
+
+            custom_5_data = {
+                'x' : x,
+                'y' : custom_5_y,
+            }
+            chart_data['custom_5'].append(custom_5_data)
+
+
+            # custom chart 6
+            try:
+                custom_6_y = i.data[custom_chart_6_key]
+            except KeyError:
+                custom_6_y = 0
+
+            custom_6_data = {
+                'x' : x,
+                'y' : custom_6_y,
+            }
+            chart_data['custom_6'].append(custom_6_data)
+
+
+            # custom chart 7
+            try:
+                custom_7_y = i.data[custom_chart_7_key]
+            except KeyError:
+                custom_7_y = 0
+
+            custom_7_data = {
+                'x' : x,
+                'y' : custom_7_y,
+            }
+            chart_data['custom_7'].append(custom_7_data)
+
+
+            # custom chart 8
+            try:
+                custom_8_y = i.data[custom_chart_8_key]
+            except KeyError:
+                custom_8_y = 0
+
+            custom_8_data = {
+                'x' : x,
+                'y' : custom_8_y,
+            }
+            chart_data['custom_8'].append(custom_8_data)
+
+
+            # custom chart 9
+            try:
+                custom_9_y = i.data[custom_chart_9_key]
+            except KeyError:
+                custom_9_y = 0
+
+            custom_9_data = {
+                'x' : x,
+                'y' : custom_9_y,
+            }
+            chart_data['custom_9'].append(custom_9_data)
 
 
         # build last image histogram
@@ -1502,7 +1638,200 @@ class ConfigView(FormView):
     def get_context(self):
         context = super(ConfigView, self).get_context()
 
-        context['camera_id'] = self.camera.id
+        camera_id = self.camera.id
+
+        context['camera_id'] = camera_id
+        context['camera_minGain'] = self.camera.minGain
+        context['camera_maxGain'] = self.camera.maxGain
+        context['camera_minExposure'] = self.camera.minExposure
+
+        if self.camera.maxExposure > 120:
+            context['camera_maxExposure'] = 120
+        else:
+            context['camera_maxExposure'] = self.camera.maxExposure
+
+
+        context['fits_enabled'] = self.indi_allsky_config.get('IMAGE_SAVE_FITS')
+
+
+        if not self.validate_longitude_timezone():
+            context['longitude_validation_message'] = '<span class="badge rounded-pill bg-warning text-dark">Warning</span><span class="text-warning"> Longitude validation failed.  Incorrect time, timezone, or longitude could cause this condition</span>'
+        else:
+            context['longitude_validation_message'] = ''
+
+
+        # query the latest image for dew point
+        camera_now_minus_15m = self.camera_now - timedelta(minutes=15)
+        latest_image_entry = db.session.query(
+            IndiAllSkyDbImageTable,
+        )\
+            .join(IndiAllSkyDbImageTable.camera)\
+            .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+            .filter(IndiAllSkyDbImageTable.createDate > camera_now_minus_15m)\
+            .order_by(IndiAllSkyDbImageTable.createDate.desc())\
+            .first()
+
+
+        if latest_image_entry:
+            dh_level_default = self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_DEF', 0)
+            dh_level_low = self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_LOW', 33)
+            dh_level_med = self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_MED', 66)
+            dh_level_high = self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_HIGH', 100)
+
+            dh_thold_diff_low = self.indi_allsky_config.get('DEW_HEATER', {}).get('THOLD_DIFF_LOW', -15)
+            dh_thold_diff_med = self.indi_allsky_config.get('DEW_HEATER', {}).get('THOLD_DIFF_MED', -10)
+            dh_thold_diff_high = self.indi_allsky_config.get('DEW_HEATER', {}).get('THOLD_DIFF_HIGH', -5)
+
+
+            fan_level_default = self.indi_allsky_config.get('FAN', {}).get('LEVEL_DEF', 0)
+            fan_level_low = self.indi_allsky_config.get('FAN', {}).get('LEVEL_LOW', 33)
+            fan_level_med = self.indi_allsky_config.get('FAN', {}).get('LEVEL_MED', 66)
+            fan_level_high = self.indi_allsky_config.get('FAN', {}).get('LEVEL_HIGH', 100)
+
+            fan_thold_diff_low = self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_LOW', -10)
+            fan_thold_diff_med = self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_MED', -5)
+            fan_thold_diff_high = self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_HIGH', 0)
+
+
+            dh_temp_slot_var = self.indi_allsky_config.get('DEW_HEATER', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10')
+            dh_dewpoint_slot_var = self.indi_allsky_config.get('DEW_HEATER', {}).get('DEWPOINT_USER_VAR_SLOT', 'sensor_user_2')
+
+            fan_temp_slot_var = self.indi_allsky_config.get('FAN', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10')
+
+
+            if latest_image_entry.data.get(dh_temp_slot_var):
+                dh_temp = latest_image_entry.data[dh_temp_slot_var]
+                context['dh_temp_str'] = '{0:0.1f}°'.format(dh_temp)
+            else:
+                dh_temp = None
+                context['dh_temp_str'] = 'Not available'
+
+            if latest_image_entry.data.get(dh_dewpoint_slot_var):
+                dh_dewpoint = latest_image_entry.data[dh_dewpoint_slot_var]
+                context['dh_dewpoint_str'] = '{0:0.1f}°'.format(dh_dewpoint)
+            else:
+                dh_dewpoint = None
+                context['dh_dewpoint_str'] = 'Not available'
+
+
+            dh_manual_target = self.indi_allsky_config.get('DEW_HEATER', {}).get('MANUAL_TARGET', 0.0)
+            if not dh_manual_target:
+                if not isinstance(dh_temp, type(None)) and not isinstance(dh_dewpoint, type(None)):
+                    dh_temp_delta = dh_temp - dh_dewpoint
+                    context['dh_temp_delta_str'] = 'Δ{0:0.1f}°'.format(dh_temp_delta)
+
+                    dh_target_low = dh_dewpoint + dh_thold_diff_low
+                    dh_target_med = dh_dewpoint + dh_thold_diff_med
+                    dh_target_high = dh_dewpoint + dh_thold_diff_high
+                    context['dh_target_low_str'] = '{0:0.1f}°'.format(dh_target_low)
+                    context['dh_target_med_str'] = '{0:0.1f}°'.format(dh_target_med)
+                    context['dh_target_high_str'] = '{0:0.1f}°'.format(dh_target_high)
+
+
+                    if dh_temp_delta <= dh_thold_diff_high:
+                        # set dew heater to high
+                        context['dh_status_str'] = '{0:d}% (High)'.format(dh_level_high)
+                    elif dh_temp_delta <= dh_thold_diff_med:
+                        # set dew heater to medium
+                        context['dh_status_str'] = '{0:d}% (Medium)'.format(dh_level_med)
+                    elif dh_temp_delta <= dh_thold_diff_low:
+                        # set dew heater to low
+                        context['dh_status_str'] = '{0:d}% (Low)'.format(dh_level_low)
+                    else:
+                        context['dh_status_str'] = '{0:d}% (Default)'.format(dh_level_default)
+
+                else:
+                    context['dh_temp_delta_str'] = 'Not available'
+                    context['dh_target_low_str'] = 'n/a'
+                    context['dh_target_med_str'] = 'n/a'
+                    context['dh_target_high_str'] = 'n/a'
+                    context['dh_status_str'] = 'n/a'
+            else:
+                if not isinstance(dh_temp, type(None)):
+                    dh_temp_delta = dh_temp - dh_manual_target
+                    context['dh_temp_delta_str'] = 'Δ{0:0.1f}° (manual target)'.format(dh_temp_delta)
+
+                    dh_target_low = dh_manual_target + dh_thold_diff_low
+                    dh_target_med = dh_manual_target + dh_thold_diff_med
+                    dh_target_high = dh_manual_target + dh_thold_diff_high
+                    context['dh_target_low_str'] = '{0:0.1f}°'.format(dh_target_low)
+                    context['dh_target_med_str'] = '{0:0.1f}°'.format(dh_target_med)
+                    context['dh_target_high_str'] = '{0:0.1f}°'.format(dh_target_high)
+
+                    if dh_temp_delta <= dh_thold_diff_high:
+                        # set dew heater to high
+                        context['dh_status_str'] = '{0:d}% (High)'.format(dh_level_high)
+                    elif dh_temp_delta <= dh_thold_diff_med:
+                        # set dew heater to medium
+                        context['dh_status_str'] = '{0:d}% (Medium)'.format(dh_level_med)
+                    elif dh_temp_delta <= dh_thold_diff_low:
+                        # set dew heater to low
+                        context['dh_status_str'] = '{0:d}% (Low)'.format(dh_level_low)
+                    else:
+                        context['dh_status_str'] = '{0:d}% (Default)'.format(dh_level_default)
+                else:
+                    context['dh_temp_delta_str'] = 'Not available'
+                    context['dh_target_low_str'] = 'n/a'
+                    context['dh_target_med_str'] = 'n/a'
+                    context['dh_target_high_str'] = 'n/a'
+                    context['dh_status_str'] = 'n/a'
+
+
+            if latest_image_entry.data.get(fan_temp_slot_var):
+                fan_temp = latest_image_entry.data[fan_temp_slot_var]
+                context['fan_temp_str'] = '{0:0.1f}°'.format(fan_temp)
+            else:
+                fan_temp = None
+                context['fan_temp_str'] = 'Not available'
+
+
+            fan_target = self.indi_allsky_config.get('FAN', {}).get('TARGET', 30.0)
+            if not isinstance(fan_temp, type(None)):
+                fan_temp_delta = fan_temp - fan_target
+                context['fan_temp_delta_str'] = 'Δ{0:0.1f}°'.format(fan_temp_delta)
+
+                fan_target_low = fan_target + fan_thold_diff_low
+                fan_target_med = fan_target + fan_thold_diff_med
+                fan_target_high = fan_target + fan_thold_diff_high
+                context['fan_target_low_str'] = '{0:0.1f}°'.format(fan_target_low)
+                context['fan_target_med_str'] = '{0:0.1f}°'.format(fan_target_med)
+                context['fan_target_high_str'] = '{0:0.1f}°'.format(fan_target_high)
+
+
+                if fan_temp_delta > fan_thold_diff_high:
+                    # set fan to high
+                    context['fan_status_str'] = '{0:d}% (High)'.format(fan_level_high)
+                elif fan_temp_delta > fan_thold_diff_med:
+                    # set fan to medium
+                    context['fan_status_str'] = '{0:d}% (Medium)'.format(fan_level_med)
+                elif fan_temp_delta > fan_thold_diff_low:
+                    # set fan to low
+                    context['fan_status_str'] = '{0:d}% (Low)'.format(fan_level_low)
+                else:
+                    context['fan_status_str'] = '{0:d}% (Default)'.format(fan_level_default)
+
+            else:
+                context['fan_temp_delta_str'] = 'Not available'
+                context['fan_target_low_str'] = 'n/a'
+                context['fan_target_med_str'] = 'n/a'
+                context['fan_target_high_str'] = 'n/a'
+                context['fan_status_str'] = 'n/a'
+        else:
+            context['dh_temp_str'] = 'Not available'
+            context['dh_dewpoint_str'] = 'Not available'
+            context['dh_temp_delta_str'] = 'Not available'
+            context['dh_target_low_str'] = 'n/a'
+            context['dh_target_med_str'] = 'n/a'
+            context['dh_target_high_str'] = 'n/a'
+            context['dh_status_str'] = 'n/a'
+
+            context['fan_temp_str'] = 'Not available'
+            context['fan_temp_delta_str'] = 'Not available'
+            context['fan_target_low_str'] = 'n/a'
+            context['fan_target_med_str'] = 'n/a'
+            context['fan_target_high_str'] = 'n/a'
+            context['fan_status_str'] = 'n/a'
+
 
         form_data = {
             'CAMERA_INTERFACE'               : self.indi_allsky_config.get('CAMERA_INTERFACE', 'indi'),
@@ -1513,7 +1842,7 @@ class ConfigView(FormView):
             'LENS_NAME'                      : self.indi_allsky_config.get('LENS_NAME', 'AllSky Lens'),
             'LENS_FOCAL_LENGTH'              : self.indi_allsky_config.get('LENS_FOCAL_LENGTH', 2.5),
             'LENS_FOCAL_RATIO'               : self.indi_allsky_config.get('LENS_FOCAL_RATIO', 2.0),
-            'LENS_IMAGE_CIRCLE'              : self.indi_allsky_config.get('LENS_IMAGE_CIRCLE', 4000),
+            'LENS_IMAGE_CIRCLE'              : self.indi_allsky_config.get('LENS_IMAGE_CIRCLE', 3000),
             'LENS_OFFSET_X'                  : self.indi_allsky_config.get('LENS_OFFSET_X', 0),
             'LENS_OFFSET_Y'                  : self.indi_allsky_config.get('LENS_OFFSET_Y', 0),
             'LENS_ALTITUDE'                  : self.indi_allsky_config.get('LENS_ALTITUDE', 90.0),
@@ -1534,16 +1863,26 @@ class ConfigView(FormView):
             'FOCUS_MODE'                     : self.indi_allsky_config.get('FOCUS_MODE', False),
             'FOCUS_DELAY'                    : self.indi_allsky_config.get('FOCUS_DELAY', 4.0),
             'CFA_PATTERN'                    : self.indi_allsky_config.get('CFA_PATTERN', ''),
+            'USE_NIGHT_COLOR'                : self.indi_allsky_config.get('USE_NIGHT_COLOR', True),
             'SCNR_ALGORITHM'                 : self.indi_allsky_config.get('SCNR_ALGORITHM', ''),
+            'SCNR_ALGORITHM_DAY'             : self.indi_allsky_config.get('SCNR_ALGORITHM_DAY', ''),
             'WBR_FACTOR'                     : self.indi_allsky_config.get('WBR_FACTOR', 1.0),
             'WBG_FACTOR'                     : self.indi_allsky_config.get('WBG_FACTOR', 1.0),
             'WBB_FACTOR'                     : self.indi_allsky_config.get('WBB_FACTOR', 1.0),
+            'WBR_FACTOR_DAY'                 : self.indi_allsky_config.get('WBR_FACTOR_DAY', 1.0),
+            'WBG_FACTOR_DAY'                 : self.indi_allsky_config.get('WBG_FACTOR_DAY', 1.0),
+            'WBB_FACTOR_DAY'                 : self.indi_allsky_config.get('WBB_FACTOR_DAY', 1.0),
             'AUTO_WB'                        : self.indi_allsky_config.get('AUTO_WB', False),
+            'AUTO_WB_DAY'                    : self.indi_allsky_config.get('AUTO_WB_DAY', False),
             'SATURATION_FACTOR'              : self.indi_allsky_config.get('SATURATION_FACTOR', 1.0),
+            'SATURATION_FACTOR_DAY'          : self.indi_allsky_config.get('SATURATION_FACTOR_DAY', 1.0),
+            'GAMMA_CORRECTION'               : self.indi_allsky_config.get('GAMMA_CORRECTION', 1.0),
+            'GAMMA_CORRECTION_DAY'           : self.indi_allsky_config.get('GAMMA_CORRECTION_DAY', 1.0),
             'CCD_COOLING'                    : self.indi_allsky_config.get('CCD_COOLING', False),
             'CCD_TEMP'                       : self.indi_allsky_config.get('CCD_TEMP', 15.0),
             'TEMP_DISPLAY'                   : self.indi_allsky_config.get('TEMP_DISPLAY', 'c'),
             'PRESSURE_DISPLAY'               : self.indi_allsky_config.get('PRESSURE_DISPLAY', 'hpa'),
+            'WINDSPEED_DISPLAY'              : self.indi_allsky_config.get('WINDSPEED_DISPLAY', 'ms'),
             'CCD_TEMP_SCRIPT'                : self.indi_allsky_config.get('CCD_TEMP_SCRIPT', ''),
             'GPS_ENABLE'                     : self.indi_allsky_config.get('GPS_ENABLE', False),
             'TARGET_ADU'                     : self.indi_allsky_config.get('TARGET_ADU', 75),
@@ -1569,6 +1908,8 @@ class ConfigView(FormView):
             'TIMELAPSE__PRE_PROCESSOR'       : self.indi_allsky_config.get('TIMELAPSE', {}).get('PRE_PROCESSOR', 'standard'),
             'TIMELAPSE__IMAGE_CIRCLE'        : self.indi_allsky_config.get('TIMELAPSE', {}).get('IMAGE_CIRCLE', 2000),
             'TIMELAPSE__KEOGRAM_RATIO'       : self.indi_allsky_config.get('TIMELAPSE', {}).get('KEOGRAM_RATIO', 0.15),
+            'TIMELAPSE__PRE_SCALE'           : self.indi_allsky_config.get('TIMELAPSE', {}).get('PRE_SCALE', 50),
+            'TIMELAPSE__FFMPEG_REPORT'       : self.indi_allsky_config.get('TIMELAPSE', {}).get('FFMPEG_REPORT', False),
             'CAPTURE_PAUSE'                  : self.indi_allsky_config.get('CAPTURE_PAUSE', False),
             'DAYTIME_CAPTURE'                : self.indi_allsky_config.get('DAYTIME_CAPTURE', True),
             'DAYTIME_CAPTURE_SAVE'           : self.indi_allsky_config.get('DAYTIME_CAPTURE_SAVE', True),
@@ -1600,6 +1941,11 @@ class ConfigView(FormView):
             'KEOGRAM_CROP_TOP'               : self.indi_allsky_config.get('KEOGRAM_CROP_TOP', 0),
             'KEOGRAM_CROP_BOTTOM'            : self.indi_allsky_config.get('KEOGRAM_CROP_BOTTOM', 0),
             'KEOGRAM_LABEL'                  : self.indi_allsky_config.get('KEOGRAM_LABEL', True),
+            'LONGTERM_KEOGRAM__ENABLE'       : self.indi_allsky_config.get('LONGTERM_KEOGRAM', {}).get('ENABLE', True),
+            'LONGTERM_KEOGRAM__OFFSET_X'     : self.indi_allsky_config.get('LONGTERM_KEOGRAM', {}).get('OFFSET_X', 0),
+            'LONGTERM_KEOGRAM__OFFSET_Y'     : self.indi_allsky_config.get('LONGTERM_KEOGRAM', {}).get('OFFSET_Y', 0),
+            'REALTIME_KEOGRAM__MAX_ENTRIES'  : self.indi_allsky_config.get('REALTIME_KEOGRAM', {}).get('MAX_ENTRIES', 1000),
+            'REALTIME_KEOGRAM__SAVE_INTERVAL': self.indi_allsky_config.get('REALTIME_KEOGRAM', {}).get('SAVE_INTERVAL', 25),
             'STARTRAILS_SUN_ALT_THOLD'       : self.indi_allsky_config.get('STARTRAILS_SUN_ALT_THOLD', -15.0),
             'STARTRAILS_MOONMODE_THOLD'      : self.indi_allsky_config.get('STARTRAILS_MOONMODE_THOLD', True),
             'STARTRAILS_MOON_ALT_THOLD'      : self.indi_allsky_config.get('STARTRAILS_MOON_ALT_THOLD', 91.0),
@@ -1624,11 +1970,13 @@ class ConfigView(FormView):
             'IMAGE_EXTRA_TEXT'               : self.indi_allsky_config.get('IMAGE_EXTRA_TEXT', ''),
             'IMAGE_ROTATE'                   : self.indi_allsky_config.get('IMAGE_ROTATE', ''),
             'IMAGE_ROTATE_ANGLE'             : self.indi_allsky_config.get('IMAGE_ROTATE_ANGLE', 0),
+            'IMAGE_ROTATE_KEEP_SIZE'         : self.indi_allsky_config.get('IMAGE_ROTATE_KEEP_SIZE', False),
+            #'IMAGE_ROTATE_WITH_OFFSET'       : self.indi_allsky_config.get('IMAGE_ROTATE_WITH_OFFSET', False),
             'IMAGE_FLIP_V'                   : self.indi_allsky_config.get('IMAGE_FLIP_V', True),
             'IMAGE_FLIP_H'                   : self.indi_allsky_config.get('IMAGE_FLIP_H', True),
             'IMAGE_SCALE'                    : self.indi_allsky_config.get('IMAGE_SCALE', 100),
             'IMAGE_CIRCLE_MASK__ENABLE'      : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('ENABLE', False),
-            'IMAGE_CIRCLE_MASK__DIAMETER'    : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('DIAMETER', 1500),
+            'IMAGE_CIRCLE_MASK__DIAMETER'    : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('DIAMETER', 3000),
             'IMAGE_CIRCLE_MASK__OFFSET_X'    : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('OFFSET_X', 0),
             'IMAGE_CIRCLE_MASK__OFFSET_Y'    : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('OFFSET_Y', 0),
             'IMAGE_CIRCLE_MASK__BLUR'        : self.indi_allsky_config.get('IMAGE_CIRCLE_MASK', {}).get('BLUR', 35),
@@ -1649,10 +1997,25 @@ class ConfigView(FormView):
             'IMAGE_SAVE_FITS'                : self.indi_allsky_config.get('IMAGE_SAVE_FITS', False),
             'NIGHT_GRAYSCALE'                : self.indi_allsky_config.get('NIGHT_GRAYSCALE', False),
             'DAYTIME_GRAYSCALE'              : self.indi_allsky_config.get('DAYTIME_GRAYSCALE', False),
-            'MOON_OVERLAY__ENABLE'           : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('ENABLE', False),
-            'MOON_OVERLAY__X'                : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('X', 200),
-            'MOON_OVERLAY__Y'                : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('Y', 200),
+            'MOON_OVERLAY__ENABLE'           : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('ENABLE', True),
+            'MOON_OVERLAY__X'                : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('X', -500),
+            'MOON_OVERLAY__Y'                : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('Y', -200),
             'MOON_OVERLAY__SCALE'            : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('SCALE', 0.5),
+            'MOON_OVERLAY__DARK_SIDE_SCALE'  : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('DARK_SIDE_SCALE', 0.4),
+            'MOON_OVERLAY__FLIP_V'           : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('FLIP_V', False),
+            'MOON_OVERLAY__FLIP_H'           : self.indi_allsky_config.get('MOON_OVERLAY', {}).get('FLIP_H', False),
+            'LIGHTGRAPH_OVERLAY__ENABLE'     : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('ENABLE', False),
+            'LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('GRAPH_HEIGHT', 30),
+            'LIGHTGRAPH_OVERLAY__GRAPH_BORDER' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('GRAPH_BORDER', 3),
+            'LIGHTGRAPH_OVERLAY__Y'          : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('Y', 10),
+            'LIGHTGRAPH_OVERLAY__OFFSET_X'   : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('OFFSET_X', 0),
+            'LIGHTGRAPH_OVERLAY__SCALE'      : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('SCALE', 1.0),
+            'LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('NOW_MARKER_SIZE', 8),
+            'LIGHTGRAPH_OVERLAY__OPACITY'    : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('OPACITY', 100),
+            'LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('PIL_FONT_SIZE', 20),
+            'LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('OPENCV_FONT_SCALE', 0.5),
+            'LIGHTGRAPH_OVERLAY__LABEL'      : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('LABEL', True),
+            'LIGHTGRAPH_OVERLAY__HOUR_LINES' : self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('HOUR_LINES', True),
             'IMAGE_EXPORT_RAW'               : self.indi_allsky_config.get('IMAGE_EXPORT_RAW', ''),
             'IMAGE_EXPORT_FOLDER'            : self.indi_allsky_config.get('IMAGE_EXPORT_FOLDER', '/var/www/html/allsky/images/export'),
             'IMAGE_EXPORT_FLIP_V'            : self.indi_allsky_config.get('IMAGE_EXPORT_FLIP_V', False),
@@ -1696,7 +2059,7 @@ class ConfigView(FormView):
             'CARDINAL_DIRS__CHAR_EAST'       : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('CHAR_EAST', 'E'),
             'CARDINAL_DIRS__CHAR_WEST'       : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('CHAR_WEST', 'W'),
             'CARDINAL_DIRS__CHAR_SOUTH'      : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('CHAR_SOUTH', 'S'),
-            'CARDINAL_DIRS__DIAMETER'        : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('DIAMETER', 4000),
+            'CARDINAL_DIRS__DIAMETER'        : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('DIAMETER', 3000),
             'CARDINAL_DIRS__OFFSET_X'        : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('OFFSET_X', 0),
             'CARDINAL_DIRS__OFFSET_Y'        : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('OFFSET_Y', 0),
             'CARDINAL_DIRS__OFFSET_TOP'      : self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('OFFSET_TOP', 15),
@@ -1710,6 +2073,10 @@ class ConfigView(FormView):
             'ORB_PROPERTIES__RADIUS'         : self.indi_allsky_config.get('ORB_PROPERTIES', {}).get('RADIUS', 9),
             'ORB_PROPERTIES__AZ_OFFSET'      : self.indi_allsky_config.get('ORB_PROPERTIES', {}).get('AZ_OFFSET', 0.0),
             'ORB_PROPERTIES__RETROGRADE'     : self.indi_allsky_config.get('ORB_PROPERTIES', {}).get('RETROGRADE', False),
+            'IMAGE_BORDER__TOP'              : self.indi_allsky_config.get('IMAGE_BORDER', {}).get('TOP', 0),
+            'IMAGE_BORDER__LEFT'             : self.indi_allsky_config.get('IMAGE_BORDER', {}).get('LEFT', 0),
+            'IMAGE_BORDER__RIGHT'            : self.indi_allsky_config.get('IMAGE_BORDER', {}).get('RIGHT', 0),
+            'IMAGE_BORDER__BOTTOM'           : self.indi_allsky_config.get('IMAGE_BORDER', {}).get('BOTTOM', 0),
             'UPLOAD_WORKERS'                 : self.indi_allsky_config.get('UPLOAD_WORKERS', 2),
             'FILETRANSFER__CLASSNAME'        : self.indi_allsky_config.get('FILETRANSFER', {}).get('CLASSNAME', 'pycurl_sftp'),
             'FILETRANSFER__HOST'             : self.indi_allsky_config.get('FILETRANSFER', {}).get('HOST', ''),
@@ -1721,22 +2088,31 @@ class ConfigView(FormView):
             'FILETRANSFER__CONNECT_TIMEOUT'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('CONNECT_TIMEOUT', 10.0),
             'FILETRANSFER__TIMEOUT'          : self.indi_allsky_config.get('FILETRANSFER', {}).get('TIMEOUT', 60.0),
             'FILETRANSFER__CERT_BYPASS'      : self.indi_allsky_config.get('FILETRANSFER', {}).get('CERT_BYPASS', True),
+            'FILETRANSFER__ATOMIC_TRANSFERS' : self.indi_allsky_config.get('FILETRANSFER', {}).get('ATOMIC_TRANSFERS', False),
             'FILETRANSFER__FORCE_IPV4'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('FORCE_IPV4', False),
             'FILETRANSFER__FORCE_IPV6'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('FORCE_IPV6', False),
-            'FILETRANSFER__REMOTE_IMAGE_NAME'         : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_IMAGE_NAME', 'image.{ext}'),
-            'FILETRANSFER__REMOTE_PANORAMA_NAME'      : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_NAME', 'panorama.{ext}'),
-            'FILETRANSFER__REMOTE_IMAGE_FOLDER'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_IMAGE_FOLDER', '/home/allsky/upload/allsky'),
-            'FILETRANSFER__REMOTE_PANORAMA_FOLDER'    : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_FOLDER', '/home/allsky/upload/allsky'),
+            'FILETRANSFER__REMOTE_IMAGE_NAME'         : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_IMAGE_NAME', 'image_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}'),
+            'FILETRANSFER__REMOTE_IMAGE_FOLDER'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_IMAGE_FOLDER', '/home/allsky/upload/allsky/images/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}'),
+            'FILETRANSFER__REMOTE_PANORAMA_NAME'      : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_NAME', 'panorama_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}'),
+            'FILETRANSFER__REMOTE_PANORAMA_FOLDER'    : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_FOLDER', '/home/allsky/upload/allsky/panoramas/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}'),
             'FILETRANSFER__REMOTE_METADATA_NAME'      : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_METADATA_NAME', 'latest_metadata.json'),
             'FILETRANSFER__REMOTE_METADATA_FOLDER'    : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_METADATA_FOLDER', '/home/allsky/upload/allsky'),
-            'FILETRANSFER__REMOTE_RAW_FOLDER'         : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_RAW_FOLDER', '/home/allsky/upload/allsky/export'),
-            'FILETRANSFER__REMOTE_FITS_FOLDER'        : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_FITS_FOLDER', '/home/allsky/upload/allsky/fits'),
-            'FILETRANSFER__REMOTE_VIDEO_FOLDER'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos'),
-            'FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_MINI_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos'),
-            'FILETRANSFER__REMOTE_KEOGRAM_FOLDER'     : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_KEOGRAM_FOLDER', '/home/allsky/upload/allsky/keograms'),
-            'FILETRANSFER__REMOTE_STARTRAIL_FOLDER'   : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_FOLDER', '/home/allsky/upload/allsky/startrails'),
-            'FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER' : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos'),
-            'FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos'),
+            'FILETRANSFER__REMOTE_RAW_NAME'           : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_RAW_NAME', 'raw_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}'),
+            'FILETRANSFER__REMOTE_RAW_FOLDER'         : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_RAW_FOLDER', '/home/allsky/upload/allsky/export/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}'),
+            'FILETRANSFER__REMOTE_FITS_NAME'          : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_FITS_NAME', 'image_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}'),
+            'FILETRANSFER__REMOTE_FITS_FOLDER'        : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_FITS_FOLDER', '/home/allsky/upload/allsky/fits/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}'),
+            'FILETRANSFER__REMOTE_VIDEO_NAME'         : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_VIDEO_NAME', 'allsky-timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_VIDEO_FOLDER'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}'),
+            'FILETRANSFER__REMOTE_MINI_VIDEO_NAME'    : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_MINI_VIDEO_NAME', 'allsky-minitimelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_MINI_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}'),
+            'FILETRANSFER__REMOTE_KEOGRAM_NAME'       : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_KEOGRAM_NAME', 'allsky-keogram_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_KEOGRAM_FOLDER'     : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_KEOGRAM_FOLDER', '/home/allsky/upload/allsky/keograms/{day_date:%Y%m%d}'),
+            'FILETRANSFER__REMOTE_STARTRAIL_NAME'     : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_NAME', 'allsky-startrail_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_STARTRAIL_FOLDER'   : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_FOLDER', '/home/allsky/upload/allsky/startrails/{day_date:%Y%m%d}'),
+            'FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME'   : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_VIDEO_NAME', 'allsky-startrail_timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER' : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_STARTRAIL_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}'),
+            'FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME'    : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_VIDEO_NAME', 'allsky-panorama_timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}'),
+            'FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_PANORAMA_VIDEO_FOLDER', '/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}'),
             'FILETRANSFER__REMOTE_ENDOFNIGHT_FOLDER'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('REMOTE_ENDOFNIGHT_FOLDER', '/home/allsky/upload/allsky'),
             'FILETRANSFER__UPLOAD_IMAGE'     : self.indi_allsky_config.get('FILETRANSFER', {}).get('UPLOAD_IMAGE', 0),
             'FILETRANSFER__UPLOAD_PANORAMA'  : self.indi_allsky_config.get('FILETRANSFER', {}).get('UPLOAD_PANORAMA', 0),
@@ -1802,8 +2178,8 @@ class ConfigView(FormView):
             'YOUTUBE__UPLOAD_MINI_VIDEO'     : self.indi_allsky_config.get('YOUTUBE', {}).get('UPLOAD_MINI_VIDEO', False),
             'YOUTUBE__UPLOAD_STARTRAIL_VIDEO': self.indi_allsky_config.get('YOUTUBE', {}).get('UPLOAD_STARTRAIL_VIDEO', False),
             'YOUTUBE__UPLOAD_PANORAMA_VIDEO' : self.indi_allsky_config.get('YOUTUBE', {}).get('UPLOAD_PANORAMA_VIDEO', False),
-            'LIBCAMERA__IMAGE_FILE_TYPE'     : self.indi_allsky_config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'dng'),
-            'LIBCAMERA__IMAGE_FILE_TYPE_DAY' : self.indi_allsky_config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'dng'),
+            'LIBCAMERA__IMAGE_FILE_TYPE'     : self.indi_allsky_config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'jpg'),
+            'LIBCAMERA__IMAGE_FILE_TYPE_DAY' : self.indi_allsky_config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'jpg'),
             'LIBCAMERA__AWB'                 : self.indi_allsky_config.get('LIBCAMERA', {}).get('AWB', 'auto'),
             'LIBCAMERA__AWB_DAY'             : self.indi_allsky_config.get('LIBCAMERA', {}).get('AWB_DAY', 'auto'),
             'LIBCAMERA__AWB_ENABLE'          : self.indi_allsky_config.get('LIBCAMERA', {}).get('AWB_ENABLE', False),
@@ -1829,7 +2205,8 @@ class ConfigView(FormView):
             'DEW_HEATER__LEVEL_DEF'          : self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_DEF', 100),
             'DEW_HEATER__THOLD_ENABLE'       : self.indi_allsky_config.get('DEW_HEATER', {}).get('THOLD_ENABLE', False),
             'DEW_HEATER__MANUAL_TARGET'      : self.indi_allsky_config.get('DEW_HEATER', {}).get('MANUAL_TARGET', 0.0),
-            'DEW_HEATER__TEMP_USER_VAR_SLOT' : str(self.indi_allsky_config.get('DEW_HEATER', {}).get('TEMP_USER_VAR_SLOT', 10)),  # string in form, int in config
+            'DEW_HEATER__TEMP_USER_VAR_SLOT' : self.indi_allsky_config.get('DEW_HEATER', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10'),
+            'DEW_HEATER__DEWPOINT_USER_VAR_SLOT' : self.indi_allsky_config.get('DEW_HEATER', {}).get('DEWPOINT_USER_VAR_SLOT', 'sensor_user_2'),
             'DEW_HEATER__LEVEL_LOW'          : self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_LOW', 33),
             'DEW_HEATER__LEVEL_MED'          : self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_MED', 66),
             'DEW_HEATER__LEVEL_HIGH'         : self.indi_allsky_config.get('DEW_HEATER', {}).get('LEVEL_HIGH', 100),
@@ -1843,13 +2220,13 @@ class ConfigView(FormView):
             'FAN__LEVEL_DEF'                 : self.indi_allsky_config.get('FAN', {}).get('LEVEL_DEF', 100),
             'FAN__THOLD_ENABLE'              : self.indi_allsky_config.get('FAN', {}).get('THOLD_ENABLE', False),
             'FAN__TARGET'                    : self.indi_allsky_config.get('FAN', {}).get('TARGET', 30.0),
-            'FAN__TEMP_USER_VAR_SLOT'        : str(self.indi_allsky_config.get('FAN', {}).get('TEMP_USER_VAR_SLOT', 10)),  # string in form, int in config
+            'FAN__TEMP_USER_VAR_SLOT'        : self.indi_allsky_config.get('FAN', {}).get('TEMP_USER_VAR_SLOT', 'sensor_user_10'),
             'FAN__LEVEL_LOW'                 : self.indi_allsky_config.get('FAN', {}).get('LEVEL_LOW', 33),
             'FAN__LEVEL_MED'                 : self.indi_allsky_config.get('FAN', {}).get('LEVEL_MED', 66),
             'FAN__LEVEL_HIGH'                : self.indi_allsky_config.get('FAN', {}).get('LEVEL_HIGH', 100),
-            'FAN__THOLD_DIFF_LOW'            : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_LOW', 15),
-            'FAN__THOLD_DIFF_MED'            : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_MED', 10),
-            'FAN__THOLD_DIFF_HIGH'           : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_HIGH', 5),
+            'FAN__THOLD_DIFF_LOW'            : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_LOW', -10),
+            'FAN__THOLD_DIFF_MED'            : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_MED', -5),
+            'FAN__THOLD_DIFF_HIGH'           : self.indi_allsky_config.get('FAN', {}).get('THOLD_DIFF_HIGH', 0),
             'GENERIC_GPIO__A_CLASSNAME'      : self.indi_allsky_config.get('GENERIC_GPIO', {}).get('A_CLASSNAME', ''),
             'GENERIC_GPIO__A_PIN_1'          : self.indi_allsky_config.get('GENERIC_GPIO', {}).get('A_PIN_1', 'D21'),
             'GENERIC_GPIO__A_INVERT_OUTPUT'  : self.indi_allsky_config.get('GENERIC_GPIO', {}).get('A_INVERT_OUTPUT', False),
@@ -1857,19 +2234,26 @@ class ConfigView(FormView):
             'TEMP_SENSOR__A_LABEL'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_LABEL', 'Sensor A'),
             'TEMP_SENSOR__A_PIN_1'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_PIN_1', 'D5'),
             'TEMP_SENSOR__A_I2C_ADDRESS'     : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_I2C_ADDRESS', '0x77'),
-            'TEMP_SENSOR__A_USER_VAR_SLOT'   : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 10)),  # string in form, int in config
+            'TEMP_SENSOR__A_USER_VAR_SLOT'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 'sensor_user_10'),
             'TEMP_SENSOR__B_CLASSNAME'       : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_CLASSNAME', ''),
             'TEMP_SENSOR__B_LABEL'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_LABEL', 'Sensor B'),
             'TEMP_SENSOR__B_PIN_1'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_PIN_1', 'D6'),
             'TEMP_SENSOR__B_I2C_ADDRESS'     : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_I2C_ADDRESS', '0x76'),
-            'TEMP_SENSOR__B_USER_VAR_SLOT'   : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 15)),  # string in form, int in config
+            'TEMP_SENSOR__B_USER_VAR_SLOT'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 'sensor_user_15'),
             'TEMP_SENSOR__C_CLASSNAME'       : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_CLASSNAME', ''),
             'TEMP_SENSOR__C_LABEL'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_LABEL', 'Sensor C'),
             'TEMP_SENSOR__C_PIN_1'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_PIN_1', 'D16'),
             'TEMP_SENSOR__C_I2C_ADDRESS'     : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_I2C_ADDRESS', '0x40'),
-            'TEMP_SENSOR__C_USER_VAR_SLOT'   : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 20)),  # string in form, int in config
+            'TEMP_SENSOR__C_USER_VAR_SLOT'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 'sensor_user_20'),
             'TEMP_SENSOR__OPENWEATHERMAP_APIKEY' : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('OPENWEATHERMAP_APIKEY', ''),
             'TEMP_SENSOR__WUNDERGROUND_APIKEY'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('WUNDERGROUND_APIKEY', ''),
+            'TEMP_SENSOR__ASTROSPHERIC_APIKEY'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('ASTROSPHERIC_APIKEY', ''),
+            'TEMP_SENSOR__AMBIENTWEATHER_APIKEY'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('AMBIENTWEATHER_APIKEY', ''),
+            'TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('AMBIENTWEATHER_APPLICATIONKEY', ''),
+            'TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS'       : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('AMBIENTWEATHER_MACADDRESS', ''),
+            'TEMP_SENSOR__ECOWITT_APIKEY'           : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('ECOWITT_APIKEY', ''),
+            'TEMP_SENSOR__ECOWITT_APPLICATIONKEY'   : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('ECOWITT_APPLICATIONKEY', ''),
+            'TEMP_SENSOR__ECOWITT_MACADDRESS'       : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('ECOWITT_MACADDRESS', ''),
             'TEMP_SENSOR__MQTT_TRANSPORT'    : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_TRANSPORT', 'tcp'),
             'TEMP_SENSOR__MQTT_HOST'         : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_HOST', 'localhost'),
             'TEMP_SENSOR__MQTT_PORT'         : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_PORT', 8883),
@@ -1877,6 +2261,16 @@ class ConfigView(FormView):
             'TEMP_SENSOR__MQTT_PASSWORD'     : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_PASSWORD', ''),
             'TEMP_SENSOR__MQTT_TLS'          : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_TLS', True),
             'TEMP_SENSOR__MQTT_CERT_BYPASS'  : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('MQTT_CERT_BYPASS', True),
+            'TEMP_SENSOR__SHT3X_HEATER_NIGHT': self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SHT3X_HEATER_NIGHT', False),
+            'TEMP_SENSOR__SHT3X_HEATER_DAY'  : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SHT3X_HEATER_DAY', False),
+            'TEMP_SENSOR__SHT4X_MODE_NIGHT'  : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SHT4X_MODE_NIGHT', 'NOHEAT_HIGHPRECISION'),
+            'TEMP_SENSOR__SHT4X_MODE_DAY'    : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SHT4X_MODE_DAY', 'NOHEAT_HIGHPRECISION'),
+            'TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT' : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SI7021_HEATER_LEVEL_NIGHT', -1)),  # string in form, int in config
+            'TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY' : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SI7021_HEATER_LEVEL_DAY', -1)),  # string in form, int in config
+            'TEMP_SENSOR__HTU31D_HEATER_NIGHT': self.indi_allsky_config.get('TEMP_SENSOR', {}).get('HTU31D_HEATER_NIGHT', False),
+            'TEMP_SENSOR__HTU31D_HEATER_DAY'  : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('HTU31D_HEATER_DAY', False),
+            'TEMP_SENSOR__HDC302X_HEATER_NIGHT'  : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('HDC302X_HEATER_NIGHT', 'OFF'),
+            'TEMP_SENSOR__HDC302X_HEATER_DAY'    : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('HDC302X_HEATER_DAY', 'OFF'),
             'TEMP_SENSOR__TSL2561_GAIN_NIGHT': str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('TSL2561_GAIN_NIGHT', 1)),  # string in form, int in config
             'TEMP_SENSOR__TSL2561_GAIN_DAY'  : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('TSL2561_GAIN_DAY', 0)),  # string in form, int in config
             'TEMP_SENSOR__TSL2561_INT_NIGHT' : str(self.indi_allsky_config.get('TEMP_SENSOR', {}).get('TSL2561_INT_NIGHT', 1)),  # string in form, int in config
@@ -1895,10 +2289,15 @@ class ConfigView(FormView):
             'TEMP_SENSOR__SI1145_IR_GAIN_DAY'    : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('SI1145_IR_GAIN_DAY', 'GAIN_ADC_CLOCK_DIV_1'),
             'TEMP_SENSOR__LTR390_GAIN_NIGHT'     : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('LTR390_GAIN_NIGHT', 'GAIN_9X'),
             'TEMP_SENSOR__LTR390_GAIN_DAY'       : self.indi_allsky_config.get('TEMP_SENSOR', {}).get('LTR390_GAIN_DAY', 'GAIN_1X'),
-            'CHARTS__CUSTOM_SLOT_1'          : str(self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_1', 10)),  # string in form, int in config
-            'CHARTS__CUSTOM_SLOT_2'          : str(self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_2', 11)),  # string in form, int in config
-            'CHARTS__CUSTOM_SLOT_3'          : str(self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_3', 12)),  # string in form, int in config
-            'CHARTS__CUSTOM_SLOT_4'          : str(self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_4', 13)),  # string in form, int in config
+            'CHARTS__CUSTOM_SLOT_1'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_1', 'sensor_user_10'),
+            'CHARTS__CUSTOM_SLOT_2'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_2', 'sensor_user_11'),
+            'CHARTS__CUSTOM_SLOT_3'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_3', 'sensor_user_12'),
+            'CHARTS__CUSTOM_SLOT_4'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_4', 'sensor_user_13'),
+            'CHARTS__CUSTOM_SLOT_5'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_5', 'sensor_user_14'),
+            'CHARTS__CUSTOM_SLOT_6'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_6', 'sensor_user_15'),
+            'CHARTS__CUSTOM_SLOT_7'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_7', 'sensor_user_16'),
+            'CHARTS__CUSTOM_SLOT_8'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_8', 'sensor_user_14'),
+            'CHARTS__CUSTOM_SLOT_9'          : self.indi_allsky_config.get('CHARTS', {}).get('CUSTOM_SLOT_9', 'sensor_user_15'),
             'ADSB__ENABLE'                   : self.indi_allsky_config.get('ADSB', {}).get('ENABLE', False),
             'ADSB__DUMP1090_URL'             : self.indi_allsky_config.get('ADSB', {}).get('DUMP1090_URL', 'https://localhost/dump1090/data/aircraft.json'),
             'ADSB__USERNAME'                 : self.indi_allsky_config.get('ADSB', {}).get('USERNAME', ''),
@@ -2006,26 +2405,47 @@ class ConfigView(FormView):
             form_data['IMAGE_CROP_ROI_Y2'] = 0
 
 
-
         # Font color
         text_properties__font_color = self.indi_allsky_config.get('TEXT_PROPERTIES', {}).get('FONT_COLOR', [200, 200, 200])
-        text_properties__font_color_str = [str(x) for x in text_properties__font_color]
-        form_data['TEXT_PROPERTIES__FONT_COLOR'] = ','.join(text_properties__font_color_str)
+        form_data['TEXT_PROPERTIES__FONT_COLOR'] = ','.join([str(x) for x in text_properties__font_color])
 
         # Cardinal directions color
         cardinal_dirs__font_color = self.indi_allsky_config.get('CARDINAL_DIRS', {}).get('FONT_COLOR', [200, 0, 0])
-        cardinal_dirs__font_color_str = [str(x) for x in cardinal_dirs__font_color]
-        form_data['CARDINAL_DIRS__FONT_COLOR'] = ','.join(cardinal_dirs__font_color_str)
+        form_data['CARDINAL_DIRS__FONT_COLOR'] = ','.join([str(x) for x in cardinal_dirs__font_color])
 
         # Sun orb color
         orb_properties__sun_color = self.indi_allsky_config.get('ORB_PROPERTIES', {}).get('SUN_COLOR', [200, 200, 100])
-        orb_properties__sun_color_str = [str(x) for x in orb_properties__sun_color]
-        form_data['ORB_PROPERTIES__SUN_COLOR'] = ','.join(orb_properties__sun_color_str)
+        form_data['ORB_PROPERTIES__SUN_COLOR'] = ','.join([str(x) for x in orb_properties__sun_color])
 
         # Moon orb color
         orb_properties__moon_color = self.indi_allsky_config.get('ORB_PROPERTIES', {}).get('MOON_COLOR', [128, 128, 128])
-        orb_properties__moon_color_str = [str(x) for x in orb_properties__moon_color]
-        form_data['ORB_PROPERTIES__MOON_COLOR'] = ','.join(orb_properties__moon_color_str)
+        form_data['ORB_PROPERTIES__MOON_COLOR'] = ','.join([str(x) for x in orb_properties__moon_color])
+
+        # Border color
+        image_border__color = self.indi_allsky_config.get('IMAGE_BORDER', {}).get('COLOR', [0, 0, 0])
+        form_data['IMAGE_BORDER__COLOR'] = ','.join([str(x) for x in image_border__color])
+
+        # Lightgraph colors
+        lightgraph_overlay__day_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('DAY_COLOR', [150, 150, 150])
+        form_data['LIGHTGRAPH_OVERLAY__DAY_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__day_color])
+
+        lightgraph_overlay__dusk_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('DUSK_COLOR', [200, 100, 60])
+        form_data['LIGHTGRAPH_OVERLAY__DUSK_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__dusk_color])
+
+        lightgraph_overlay__night_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('NIGHT_COLOR', [30, 30, 30])
+        form_data['LIGHTGRAPH_OVERLAY__NIGHT_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__night_color])
+
+        lightgraph_overlay__hour_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('HOUR_COLOR', [100, 15, 15])
+        form_data['LIGHTGRAPH_OVERLAY__HOUR_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__hour_color])
+
+        lightgraph_overlay__border_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('BORDER_COLOR', [1, 1, 1])
+        form_data['LIGHTGRAPH_OVERLAY__BORDER_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__border_color])
+
+        lightgraph_overlay__now_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('NOW_COLOR', [120, 120, 200])
+        form_data['LIGHTGRAPH_OVERLAY__NOW_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__now_color])
+
+        lightgraph_overlay__font_color = self.indi_allsky_config.get('LIGHTGRAPH_OVERLAY', {}).get('FONT_COLOR', [150, 150, 150])
+        form_data['LIGHTGRAPH_OVERLAY__FONT_COLOR'] = ','.join([str(x) for x in lightgraph_overlay__font_color])
 
 
         # Youtube
@@ -2167,8 +2587,45 @@ class AjaxConfigView(BaseView):
 
 
         # sanity check
-        if not self.indi_allsky_config.get('CCD_CONFIG'):
-            self.indi_allsky_config['CCD_CONFIG'] = {}
+        leaf_list = (
+            'CCD_CONFIG',
+            'IMAGE_FILE_COMPRESSION',
+            'IMAGE_CIRCLE_MASK',
+            'FISH2PANO',
+            'TEXT_PROPERTIES',
+            'CARDINAL_DIRS',
+            'IMAGE_STRETCH',
+            'ORB_PROPERTIES',
+            'IMAGE_BORDER',
+            'FILETRANSFER',
+            'S3UPLOAD',
+            'MQTTPUBLISH',
+            'SYNCAPI',
+            'YOUTUBE',
+            'LIBCAMERA',
+            'PYCURL_CAMERA',
+            'ACCUM_CAMERA',
+            'FOCUSER',
+            'DEW_HEATER',
+            'FAN',
+            'GENERIC_GPIO',
+            'TEMP_SENSOR',
+            'THUMBNAILS',
+            'HEALTHCHECK',
+            'CHARTS',
+            'TIMELAPSE',
+            'MOON_OVERLAY',
+            'LIGHTGRAPH_OVERLAY',
+            'ADSB',
+            'SATELLITE_TRACK',
+            'LONGTERM_KEOGRAM',
+            'REALTIME_KEOGRAM',
+        )
+
+        for leaf in leaf_list:
+            if not self.indi_allsky_config.get(leaf):
+                self.indi_allsky_config[leaf] = {}
+
 
         if not self.indi_allsky_config['CCD_CONFIG'].get('NIGHT'):
             self.indi_allsky_config['CCD_CONFIG']['NIGHT'] = {}
@@ -2179,89 +2636,10 @@ class AjaxConfigView(BaseView):
         if not self.indi_allsky_config['CCD_CONFIG'].get('DAY'):
             self.indi_allsky_config['CCD_CONFIG']['DAY'] = {}
 
-        if not self.indi_allsky_config.get('IMAGE_FILE_COMPRESSION'):
-            self.indi_allsky_config['IMAGE_FILE_COMPRESSION'] = {}
-
-        if not self.indi_allsky_config.get('IMAGE_CIRCLE_MASK'):
-            self.indi_allsky_config['IMAGE_CIRCLE_MASK'] = {}
-
-        if not self.indi_allsky_config.get('FISH2PANO'):
-            self.indi_allsky_config['FISH2PANO'] = {}
-
-        if not self.indi_allsky_config.get('TEXT_PROPERTIES'):
-            self.indi_allsky_config['TEXT_PROPERTIES'] = {}
-
-        if not self.indi_allsky_config.get('CARDINAL_DIRS'):
-            self.indi_allsky_config['CARDINAL_DIRS'] = {}
-
-        if not self.indi_allsky_config.get('IMAGE_STRETCH'):
-            self.indi_allsky_config['IMAGE_STRETCH'] = {}
-
-        if not self.indi_allsky_config.get('ORB_PROPERTIES'):
-            self.indi_allsky_config['ORB_PROPERTIES'] = {}
-
-        if not self.indi_allsky_config.get('FILETRANSFER'):
-            self.indi_allsky_config['FILETRANSFER'] = {}
-
-        if not self.indi_allsky_config.get('S3UPLOAD'):
-            self.indi_allsky_config['S3UPLOAD'] = {}
-
-        if not self.indi_allsky_config.get('MQTTPUBLISH'):
-            self.indi_allsky_config['MQTTPUBLISH'] = {}
-
-        if not self.indi_allsky_config.get('SYNCAPI'):
-            self.indi_allsky_config['SYNCAPI'] = {}
-
-        if not self.indi_allsky_config.get('YOUTUBE'):
-            self.indi_allsky_config['YOUTUBE'] = {}
-
-        if not self.indi_allsky_config.get('LIBCAMERA'):
-            self.indi_allsky_config['LIBCAMERA'] = {}
-
-        if not self.indi_allsky_config.get('PYCURL_CAMERA'):
-            self.indi_allsky_config['PYCURL_CAMERA'] = {}
-
-        if not self.indi_allsky_config.get('ACCUM_CAMERA'):
-            self.indi_allsky_config['ACCUM_CAMERA'] = {}
-
-        if not self.indi_allsky_config.get('FOCUSER'):
-            self.indi_allsky_config['FOCUSER'] = {}
-
-        if not self.indi_allsky_config.get('DEW_HEATER'):
-            self.indi_allsky_config['DEW_HEATER'] = {}
-
-        if not self.indi_allsky_config.get('FAN'):
-            self.indi_allsky_config['FAN'] = {}
-
-        if not self.indi_allsky_config.get('GENERIC_GPIO'):
-            self.indi_allsky_config['GENERIC_GPIO'] = {}
-
-        if not self.indi_allsky_config.get('TEMP_SENSOR'):
-            self.indi_allsky_config['TEMP_SENSOR'] = {}
-
-        if not self.indi_allsky_config.get('THUMBNAILS'):
-            self.indi_allsky_config['THUMBNAILS'] = {}
-
-        if not self.indi_allsky_config.get('HEALTHCHECK'):
-            self.indi_allsky_config['HEALTHCHECK'] = {}
-
-        if not self.indi_allsky_config.get('CHARTS'):
-            self.indi_allsky_config['CHARTS'] = {}
-
-        if not self.indi_allsky_config.get('TIMELAPSE'):
-            self.indi_allsky_config['TIMELAPSE'] = {}
-
-        if not self.indi_allsky_config.get('MOON_OVERLAY'):
-            self.indi_allsky_config['MOON_OVERLAY'] = {}
-
-        if not self.indi_allsky_config.get('ADSB'):
-            self.indi_allsky_config['ADSB'] = {}
-
-        if not self.indi_allsky_config.get('SATELLITE_TRACK'):
-            self.indi_allsky_config['SATELLITE_TRACK'] = {}
 
         if not self.indi_allsky_config.get('FITSHEADERS'):
             self.indi_allsky_config['FITSHEADERS'] = [['', ''], ['', ''], ['', ''], ['', ''], ['', '']]
+
 
         # update data
         self.indi_allsky_config['CAMERA_INTERFACE']                     = str(request.json['CAMERA_INTERFACE'])
@@ -2293,16 +2671,26 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['FOCUS_MODE']                           = bool(request.json['FOCUS_MODE'])
         self.indi_allsky_config['FOCUS_DELAY']                          = float(request.json['FOCUS_DELAY'])
         self.indi_allsky_config['CFA_PATTERN']                          = str(request.json['CFA_PATTERN'])
+        self.indi_allsky_config['USE_NIGHT_COLOR']                      = bool(request.json['USE_NIGHT_COLOR'])
         self.indi_allsky_config['SCNR_ALGORITHM']                       = str(request.json['SCNR_ALGORITHM'])
+        self.indi_allsky_config['SCNR_ALGORITHM_DAY']                   = str(request.json['SCNR_ALGORITHM_DAY'])
         self.indi_allsky_config['WBR_FACTOR']                           = float(request.json['WBR_FACTOR'])
         self.indi_allsky_config['WBG_FACTOR']                           = float(request.json['WBG_FACTOR'])
         self.indi_allsky_config['WBB_FACTOR']                           = float(request.json['WBB_FACTOR'])
+        self.indi_allsky_config['WBR_FACTOR_DAY']                       = float(request.json['WBR_FACTOR_DAY'])
+        self.indi_allsky_config['WBG_FACTOR_DAY']                       = float(request.json['WBG_FACTOR_DAY'])
+        self.indi_allsky_config['WBB_FACTOR_DAY']                       = float(request.json['WBB_FACTOR_DAY'])
         self.indi_allsky_config['SATURATION_FACTOR']                    = float(request.json['SATURATION_FACTOR'])
+        self.indi_allsky_config['SATURATION_FACTOR_DAY']                = float(request.json['SATURATION_FACTOR_DAY'])
+        self.indi_allsky_config['GAMMA_CORRECTION']                     = float(request.json['GAMMA_CORRECTION'])
+        self.indi_allsky_config['GAMMA_CORRECtION_DAY']                 = float(request.json['GAMMA_CORRECTION_DAY'])
         self.indi_allsky_config['CCD_COOLING']                          = bool(request.json['CCD_COOLING'])
         self.indi_allsky_config['CCD_TEMP']                             = float(request.json['CCD_TEMP'])
         self.indi_allsky_config['AUTO_WB']                              = bool(request.json['AUTO_WB'])
+        self.indi_allsky_config['AUTO_WB_DAY']                          = bool(request.json['AUTO_WB_DAY'])
         self.indi_allsky_config['TEMP_DISPLAY']                         = str(request.json['TEMP_DISPLAY'])
         self.indi_allsky_config['PRESSURE_DISPLAY']                     = str(request.json['PRESSURE_DISPLAY'])
+        self.indi_allsky_config['WINDSPEED_DISPLAY']                    = str(request.json['WINDSPEED_DISPLAY'])
         self.indi_allsky_config['GPS_ENABLE']                           = bool(request.json['GPS_ENABLE'])
         self.indi_allsky_config['CCD_TEMP_SCRIPT']                      = str(request.json['CCD_TEMP_SCRIPT'])
         self.indi_allsky_config['TARGET_ADU']                           = int(request.json['TARGET_ADU'])
@@ -2328,6 +2716,8 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['TIMELAPSE']['PRE_PROCESSOR']           = str(request.json['TIMELAPSE__PRE_PROCESSOR'])
         self.indi_allsky_config['TIMELAPSE']['IMAGE_CIRCLE']            = int(request.json['TIMELAPSE__IMAGE_CIRCLE'])
         self.indi_allsky_config['TIMELAPSE']['KEOGRAM_RATIO']           = float(request.json['TIMELAPSE__KEOGRAM_RATIO'])
+        self.indi_allsky_config['TIMELAPSE']['PRE_SCALE']               = int(request.json['TIMELAPSE__PRE_SCALE'])
+        self.indi_allsky_config['TIMELAPSE']['FFMPEG_REPORT']           = bool(request.json['TIMELAPSE__FFMPEG_REPORT'])
         self.indi_allsky_config['CAPTURE_PAUSE']                        = bool(request.json['CAPTURE_PAUSE'])
         self.indi_allsky_config['DAYTIME_CAPTURE']                      = bool(request.json['DAYTIME_CAPTURE'])
         self.indi_allsky_config['DAYTIME_CAPTURE_SAVE']                 = bool(request.json['DAYTIME_CAPTURE_SAVE'])
@@ -2359,6 +2749,11 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['KEOGRAM_CROP_TOP']                     = int(request.json['KEOGRAM_CROP_TOP'])
         self.indi_allsky_config['KEOGRAM_CROP_BOTTOM']                  = int(request.json['KEOGRAM_CROP_BOTTOM'])
         self.indi_allsky_config['KEOGRAM_LABEL']                        = bool(request.json['KEOGRAM_LABEL'])
+        self.indi_allsky_config['LONGTERM_KEOGRAM']['ENABLE']           = bool(request.json['LONGTERM_KEOGRAM__ENABLE'])
+        self.indi_allsky_config['LONGTERM_KEOGRAM']['OFFSET_X']         = int(request.json['LONGTERM_KEOGRAM__OFFSET_X'])
+        self.indi_allsky_config['LONGTERM_KEOGRAM']['OFFSET_Y']         = int(request.json['LONGTERM_KEOGRAM__OFFSET_Y'])
+        self.indi_allsky_config['REALTIME_KEOGRAM']['MAX_ENTRIES']      = int(request.json['REALTIME_KEOGRAM__MAX_ENTRIES'])
+        self.indi_allsky_config['REALTIME_KEOGRAM']['SAVE_INTERVAL']    = int(request.json['REALTIME_KEOGRAM__SAVE_INTERVAL'])
         self.indi_allsky_config['STARTRAILS_SUN_ALT_THOLD']             = float(request.json['STARTRAILS_SUN_ALT_THOLD'])
         self.indi_allsky_config['STARTRAILS_MOONMODE_THOLD']            = bool(request.json['STARTRAILS_MOONMODE_THOLD'])
         self.indi_allsky_config['STARTRAILS_MOON_ALT_THOLD']            = float(request.json['STARTRAILS_MOON_ALT_THOLD'])
@@ -2385,6 +2780,8 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['IMAGE_EXTRA_TEXT']                     = str(request.json['IMAGE_EXTRA_TEXT'])
         self.indi_allsky_config['IMAGE_ROTATE']                         = str(request.json['IMAGE_ROTATE'])
         self.indi_allsky_config['IMAGE_ROTATE_ANGLE']                   = int(request.json['IMAGE_ROTATE_ANGLE'])
+        self.indi_allsky_config['IMAGE_ROTATE_KEEP_SIZE']               = bool(request.json['IMAGE_ROTATE_KEEP_SIZE'])
+        #self.indi_allsky_config['IMAGE_ROTATE_WITH_OFFSET']             = bool(request.json['IMAGE_ROTATE_WITH_OFFSET'])
         self.indi_allsky_config['IMAGE_FLIP_V']                         = bool(request.json['IMAGE_FLIP_V'])
         self.indi_allsky_config['IMAGE_FLIP_H']                         = bool(request.json['IMAGE_FLIP_H'])
         self.indi_allsky_config['IMAGE_SCALE']                          = int(request.json['IMAGE_SCALE'])
@@ -2414,6 +2811,21 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['MOON_OVERLAY']['X']                    = int(request.json['MOON_OVERLAY__X'])
         self.indi_allsky_config['MOON_OVERLAY']['Y']                    = int(request.json['MOON_OVERLAY__Y'])
         self.indi_allsky_config['MOON_OVERLAY']['SCALE']                = float(request.json['MOON_OVERLAY__SCALE'])
+        self.indi_allsky_config['MOON_OVERLAY']['DARK_SIDE_SCALE']      = float(request.json['MOON_OVERLAY__DARK_SIDE_SCALE'])
+        self.indi_allsky_config['MOON_OVERLAY']['FLIP_V']               = bool(request.json['MOON_OVERLAY__FLIP_V'])
+        self.indi_allsky_config['MOON_OVERLAY']['FLIP_H']               = bool(request.json['MOON_OVERLAY__FLIP_H'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['ENABLE']         = bool(request.json['LIGHTGRAPH_OVERLAY__ENABLE'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['GRAPH_HEIGHT']   = int(request.json['LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['GRAPH_BORDER']   = int(request.json['LIGHTGRAPH_OVERLAY__GRAPH_BORDER'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['Y']              = int(request.json['LIGHTGRAPH_OVERLAY__Y'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['OFFSET_X']       = int(request.json['LIGHTGRAPH_OVERLAY__OFFSET_X'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['SCALE']          = float(request.json['LIGHTGRAPH_OVERLAY__SCALE'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['NOW_MARKER_SIZE']  = int(request.json['LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['OPACITY']        = int(request.json['LIGHTGRAPH_OVERLAY__OPACITY'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['PIL_FONT_SIZE']  = int(request.json['LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['OPENCV_FONT_SCALE'] = float(request.json['LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['LABEL']          = bool(request.json['LIGHTGRAPH_OVERLAY__LABEL'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['HOUR_LINES']     = bool(request.json['LIGHTGRAPH_OVERLAY__HOUR_LINES'])
         self.indi_allsky_config['IMAGE_EXPORT_RAW']                     = str(request.json['IMAGE_EXPORT_RAW'])
         self.indi_allsky_config['IMAGE_EXPORT_FOLDER']                  = str(request.json['IMAGE_EXPORT_FOLDER'])
         self.indi_allsky_config['IMAGE_EXPORT_FLIP_V']                  = bool(request.json['IMAGE_EXPORT_FLIP_V'])
@@ -2471,6 +2883,10 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['ORB_PROPERTIES']['RADIUS']             = int(request.json['ORB_PROPERTIES__RADIUS'])
         self.indi_allsky_config['ORB_PROPERTIES']['AZ_OFFSET']          = float(request.json['ORB_PROPERTIES__AZ_OFFSET'])
         self.indi_allsky_config['ORB_PROPERTIES']['RETROGRADE']         = bool(request.json['ORB_PROPERTIES__RETROGRADE'])
+        self.indi_allsky_config['IMAGE_BORDER']['TOP']                  = int(request.json['IMAGE_BORDER__TOP'])
+        self.indi_allsky_config['IMAGE_BORDER']['LEFT']                 = int(request.json['IMAGE_BORDER__LEFT'])
+        self.indi_allsky_config['IMAGE_BORDER']['RIGHT']                = int(request.json['IMAGE_BORDER__RIGHT'])
+        self.indi_allsky_config['IMAGE_BORDER']['BOTTOM']               = int(request.json['IMAGE_BORDER__BOTTOM'])
         self.indi_allsky_config['UPLOAD_WORKERS']                       = int(request.json['UPLOAD_WORKERS'])
         self.indi_allsky_config['FILETRANSFER']['CLASSNAME']            = str(request.json['FILETRANSFER__CLASSNAME'])
         self.indi_allsky_config['FILETRANSFER']['HOST']                 = str(request.json['FILETRANSFER__HOST'])
@@ -2482,21 +2898,30 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['FILETRANSFER']['CONNECT_TIMEOUT']      = float(request.json['FILETRANSFER__CONNECT_TIMEOUT'])
         self.indi_allsky_config['FILETRANSFER']['TIMEOUT']              = float(request.json['FILETRANSFER__TIMEOUT'])
         self.indi_allsky_config['FILETRANSFER']['CERT_BYPASS']          = bool(request.json['FILETRANSFER__CERT_BYPASS'])
+        self.indi_allsky_config['FILETRANSFER']['ATOMIC_TRANSFERS']     = bool(request.json['FILETRANSFER__ATOMIC_TRANSFERS'])
         self.indi_allsky_config['FILETRANSFER']['FORCE_IPV4']           = bool(request.json['FILETRANSFER__FORCE_IPV4'])
         self.indi_allsky_config['FILETRANSFER']['FORCE_IPV6']           = bool(request.json['FILETRANSFER__FORCE_IPV6'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_IMAGE_NAME']        = str(request.json['FILETRANSFER__REMOTE_IMAGE_NAME'])
-        self.indi_allsky_config['FILETRANSFER']['REMOTE_PANORAMA_NAME']     = str(request.json['FILETRANSFER__REMOTE_PANORAMA_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_IMAGE_FOLDER']      = str(request.json['FILETRANSFER__REMOTE_IMAGE_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_PANORAMA_NAME']     = str(request.json['FILETRANSFER__REMOTE_PANORAMA_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_PANORAMA_FOLDER']   = str(request.json['FILETRANSFER__REMOTE_PANORAMA_FOLDER'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_METADATA_NAME']     = str(request.json['FILETRANSFER__REMOTE_METADATA_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_METADATA_FOLDER']   = str(request.json['FILETRANSFER__REMOTE_METADATA_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_RAW_NAME']          = str(request.json['FILETRANSFER__REMOTE_RAW_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_RAW_FOLDER']        = str(request.json['FILETRANSFER__REMOTE_RAW_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_FITS_NAME']         = str(request.json['FILETRANSFER__REMOTE_FITS_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_FITS_FOLDER']       = str(request.json['FILETRANSFER__REMOTE_FITS_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_VIDEO_NAME']        = str(request.json['FILETRANSFER__REMOTE_VIDEO_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_VIDEO_FOLDER']      = str(request.json['FILETRANSFER__REMOTE_VIDEO_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_MINI_VIDEO_NAME']   = str(request.json['FILETRANSFER__REMOTE_MINI_VIDEO_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_MINI_VIDEO_FOLDER'] = str(request.json['FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_KEOGRAM_NAME']      = str(request.json['FILETRANSFER__REMOTE_KEOGRAM_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_KEOGRAM_FOLDER']    = str(request.json['FILETRANSFER__REMOTE_KEOGRAM_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_STARTRAIL_NAME']    = str(request.json['FILETRANSFER__REMOTE_STARTRAIL_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_STARTRAIL_FOLDER']  = str(request.json['FILETRANSFER__REMOTE_STARTRAIL_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_STARTRAIL_VIDEO_NAME']   = str(request.json['FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_STARTRAIL_VIDEO_FOLDER'] = str(request.json['FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER'])
+        self.indi_allsky_config['FILETRANSFER']['REMOTE_PANORAMA_VIDEO_NAME']    = str(request.json['FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_PANORAMA_VIDEO_FOLDER']  = str(request.json['FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER'])
         self.indi_allsky_config['FILETRANSFER']['REMOTE_ENDOFNIGHT_FOLDER'] = str(request.json['FILETRANSFER__REMOTE_ENDOFNIGHT_FOLDER'])
         self.indi_allsky_config['FILETRANSFER']['UPLOAD_IMAGE']         = int(request.json['FILETRANSFER__UPLOAD_IMAGE'])
@@ -2600,7 +3025,8 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['DEW_HEATER']['LEVEL_DEF']              = int(request.json['DEW_HEATER__LEVEL_DEF'])
         self.indi_allsky_config['DEW_HEATER']['THOLD_ENABLE']           = bool(request.json['DEW_HEATER__THOLD_ENABLE'])
         self.indi_allsky_config['DEW_HEATER']['MANUAL_TARGET']          = float(request.json['DEW_HEATER__MANUAL_TARGET'])
-        self.indi_allsky_config['DEW_HEATER']['TEMP_USER_VAR_SLOT']     = int(request.json['DEW_HEATER__TEMP_USER_VAR_SLOT'])
+        self.indi_allsky_config['DEW_HEATER']['TEMP_USER_VAR_SLOT']     = str(request.json['DEW_HEATER__TEMP_USER_VAR_SLOT'])
+        self.indi_allsky_config['DEW_HEATER']['DEWPOINT_USER_VAR_SLOT'] = str(request.json['DEW_HEATER__DEWPOINT_USER_VAR_SLOT'])
         self.indi_allsky_config['DEW_HEATER']['LEVEL_LOW']              = int(request.json['DEW_HEATER__LEVEL_LOW'])
         self.indi_allsky_config['DEW_HEATER']['LEVEL_MED']              = int(request.json['DEW_HEATER__LEVEL_MED'])
         self.indi_allsky_config['DEW_HEATER']['LEVEL_HIGH']             = int(request.json['DEW_HEATER__LEVEL_HIGH'])
@@ -2614,7 +3040,7 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['FAN']['LEVEL_DEF']                     = int(request.json['FAN__LEVEL_DEF'])
         self.indi_allsky_config['FAN']['THOLD_ENABLE']                  = bool(request.json['FAN__THOLD_ENABLE'])
         self.indi_allsky_config['FAN']['TARGET']                        = float(request.json['FAN__TARGET'])
-        self.indi_allsky_config['FAN']['TEMP_USER_VAR_SLOT']            = int(request.json['FAN__TEMP_USER_VAR_SLOT'])
+        self.indi_allsky_config['FAN']['TEMP_USER_VAR_SLOT']            = str(request.json['FAN__TEMP_USER_VAR_SLOT'])
         self.indi_allsky_config['FAN']['LEVEL_LOW']                     = int(request.json['FAN__LEVEL_LOW'])
         self.indi_allsky_config['FAN']['LEVEL_MED']                     = int(request.json['FAN__LEVEL_MED'])
         self.indi_allsky_config['FAN']['LEVEL_HIGH']                    = int(request.json['FAN__LEVEL_HIGH'])
@@ -2627,20 +3053,27 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['TEMP_SENSOR']['A_CLASSNAME']           = str(request.json['TEMP_SENSOR__A_CLASSNAME'])
         self.indi_allsky_config['TEMP_SENSOR']['A_LABEL']               = str(request.json['TEMP_SENSOR__A_LABEL'])
         self.indi_allsky_config['TEMP_SENSOR']['A_PIN_1']               = str(request.json['TEMP_SENSOR__A_PIN_1'])
-        self.indi_allsky_config['TEMP_SENSOR']['A_USER_VAR_SLOT']       = int(request.json['TEMP_SENSOR__A_USER_VAR_SLOT'])
+        self.indi_allsky_config['TEMP_SENSOR']['A_USER_VAR_SLOT']       = str(request.json['TEMP_SENSOR__A_USER_VAR_SLOT'])
         self.indi_allsky_config['TEMP_SENSOR']['A_I2C_ADDRESS']         = str(request.json['TEMP_SENSOR__A_I2C_ADDRESS'])
         self.indi_allsky_config['TEMP_SENSOR']['B_CLASSNAME']           = str(request.json['TEMP_SENSOR__B_CLASSNAME'])
         self.indi_allsky_config['TEMP_SENSOR']['B_LABEL']               = str(request.json['TEMP_SENSOR__B_LABEL'])
         self.indi_allsky_config['TEMP_SENSOR']['B_PIN_1']               = str(request.json['TEMP_SENSOR__B_PIN_1'])
-        self.indi_allsky_config['TEMP_SENSOR']['B_USER_VAR_SLOT']       = int(request.json['TEMP_SENSOR__B_USER_VAR_SLOT'])
+        self.indi_allsky_config['TEMP_SENSOR']['B_USER_VAR_SLOT']       = str(request.json['TEMP_SENSOR__B_USER_VAR_SLOT'])
         self.indi_allsky_config['TEMP_SENSOR']['B_I2C_ADDRESS']         = str(request.json['TEMP_SENSOR__B_I2C_ADDRESS'])
         self.indi_allsky_config['TEMP_SENSOR']['C_CLASSNAME']           = str(request.json['TEMP_SENSOR__C_CLASSNAME'])
         self.indi_allsky_config['TEMP_SENSOR']['C_LABEL']               = str(request.json['TEMP_SENSOR__C_LABEL'])
         self.indi_allsky_config['TEMP_SENSOR']['C_PIN_1']               = str(request.json['TEMP_SENSOR__C_PIN_1'])
-        self.indi_allsky_config['TEMP_SENSOR']['C_USER_VAR_SLOT']       = int(request.json['TEMP_SENSOR__C_USER_VAR_SLOT'])
+        self.indi_allsky_config['TEMP_SENSOR']['C_USER_VAR_SLOT']       = str(request.json['TEMP_SENSOR__C_USER_VAR_SLOT'])
         self.indi_allsky_config['TEMP_SENSOR']['C_I2C_ADDRESS']         = str(request.json['TEMP_SENSOR__C_I2C_ADDRESS'])
         self.indi_allsky_config['TEMP_SENSOR']['OPENWEATHERMAP_APIKEY'] = str(request.json['TEMP_SENSOR__OPENWEATHERMAP_APIKEY'])
         self.indi_allsky_config['TEMP_SENSOR']['WUNDERGROUND_APIKEY']   = str(request.json['TEMP_SENSOR__WUNDERGROUND_APIKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY']   = str(request.json['TEMP_SENSOR__ASTROSPHERIC_APIKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['AMBIENTWEATHER_APIKEY']         = str(request.json['TEMP_SENSOR__AMBIENTWEATHER_APIKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['AMBIENTWEATHER_APPLICATIONKEY'] = str(request.json['TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['AMBIENTWEATHER_MACADDRESS']     = str(request.json['TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS'])
+        self.indi_allsky_config['TEMP_SENSOR']['ECOWITT_APIKEY']         = str(request.json['TEMP_SENSOR__ECOWITT_APIKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['ECOWITT_APPLICATIONKEY'] = str(request.json['TEMP_SENSOR__ECOWITT_APPLICATIONKEY'])
+        self.indi_allsky_config['TEMP_SENSOR']['ECOWITT_MACADDRESS']     = str(request.json['TEMP_SENSOR__ECOWITT_MACADDRESS'])
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_TRANSPORT']        = str(request.json['TEMP_SENSOR__MQTT_TRANSPORT'])
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_HOST']             = str(request.json['TEMP_SENSOR__MQTT_HOST'])
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_PORT']             = int(request.json['TEMP_SENSOR__MQTT_PORT'])
@@ -2648,6 +3081,16 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_PASSWORD']         = str(request.json['TEMP_SENSOR__MQTT_PASSWORD'])
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_TLS']              = bool(request.json['TEMP_SENSOR__MQTT_TLS'])
         self.indi_allsky_config['TEMP_SENSOR']['MQTT_CERT_BYPASS']      = bool(request.json['TEMP_SENSOR__MQTT_CERT_BYPASS'])
+        self.indi_allsky_config['TEMP_SENSOR']['SHT3X_HEATER_NIGHT']    = bool(request.json['TEMP_SENSOR__SHT3X_HEATER_NIGHT'])
+        self.indi_allsky_config['TEMP_SENSOR']['SHT3X_HEATER_DAY']      = bool(request.json['TEMP_SENSOR__SHT3X_HEATER_DAY'])
+        self.indi_allsky_config['TEMP_SENSOR']['SHT4X_MODE_NIGHT']      = str(request.json['TEMP_SENSOR__SHT4X_MODE_NIGHT'])
+        self.indi_allsky_config['TEMP_SENSOR']['SHT4X_MODE_DAY']        = str(request.json['TEMP_SENSOR__SHT4X_MODE_DAY'])
+        self.indi_allsky_config['TEMP_SENSOR']['SI7021_HEATER_LEVEL_NIGHT'] = int(request.json['TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT'])
+        self.indi_allsky_config['TEMP_SENSOR']['SI7021_HEATER_LEVEL_DAY'] = int(request.json['TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY'])
+        self.indi_allsky_config['TEMP_SENSOR']['HTU31D_HEATER_NIGHT']   = bool(request.json['TEMP_SENSOR__HTU31D_HEATER_NIGHT'])
+        self.indi_allsky_config['TEMP_SENSOR']['HTU31D_HEATER_DAY']     = bool(request.json['TEMP_SENSOR__HTU31D_HEATER_DAY'])
+        self.indi_allsky_config['TEMP_SENSOR']['HDC302X_HEATER_NIGHT']  = str(request.json['TEMP_SENSOR__HDC302X_HEATER_NIGHT'])
+        self.indi_allsky_config['TEMP_SENSOR']['HDC302X_HEATER_DAY']    = str(request.json['TEMP_SENSOR__HDC302X_HEATER_DAY'])
         self.indi_allsky_config['TEMP_SENSOR']['TSL2561_GAIN_NIGHT']    = int(request.json['TEMP_SENSOR__TSL2561_GAIN_NIGHT'])
         self.indi_allsky_config['TEMP_SENSOR']['TSL2561_GAIN_DAY']      = int(request.json['TEMP_SENSOR__TSL2561_GAIN_DAY'])
         self.indi_allsky_config['TEMP_SENSOR']['TSL2561_INT_NIGHT']     = int(request.json['TEMP_SENSOR__TSL2561_INT_NIGHT'])
@@ -2666,10 +3109,15 @@ class AjaxConfigView(BaseView):
         self.indi_allsky_config['TEMP_SENSOR']['SI1145_IR_GAIN_DAY']    = str(request.json['TEMP_SENSOR__SI1145_IR_GAIN_DAY'])
         self.indi_allsky_config['TEMP_SENSOR']['LTR390_GAIN_NIGHT']     = str(request.json['TEMP_SENSOR__LTR390_GAIN_NIGHT'])
         self.indi_allsky_config['TEMP_SENSOR']['LTR390_GAIN_DAY']       = str(request.json['TEMP_SENSOR__LTR390_GAIN_DAY'])
-        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_1']              = int(request.json['CHARTS__CUSTOM_SLOT_1'])
-        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_2']              = int(request.json['CHARTS__CUSTOM_SLOT_2'])
-        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_3']              = int(request.json['CHARTS__CUSTOM_SLOT_3'])
-        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_4']              = int(request.json['CHARTS__CUSTOM_SLOT_4'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_1']              = str(request.json['CHARTS__CUSTOM_SLOT_1'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_2']              = str(request.json['CHARTS__CUSTOM_SLOT_2'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_3']              = str(request.json['CHARTS__CUSTOM_SLOT_3'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_4']              = str(request.json['CHARTS__CUSTOM_SLOT_4'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_5']              = str(request.json['CHARTS__CUSTOM_SLOT_5'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_6']              = str(request.json['CHARTS__CUSTOM_SLOT_6'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_7']              = str(request.json['CHARTS__CUSTOM_SLOT_7'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_8']              = str(request.json['CHARTS__CUSTOM_SLOT_8'])
+        self.indi_allsky_config['CHARTS']['CUSTOM_SLOT_9']              = str(request.json['CHARTS__CUSTOM_SLOT_9'])
         self.indi_allsky_config['ADSB']['ENABLE']                       = bool(request.json['ADSB__ENABLE'])
         self.indi_allsky_config['ADSB']['DUMP1090_URL']                 = str(request.json['ADSB__DUMP1090_URL'])
         self.indi_allsky_config['ADSB']['USERNAME']                     = str(request.json['ADSB__USERNAME'])
@@ -2740,23 +3188,45 @@ class AjaxConfigView(BaseView):
 
         # TEXT_PROPERTIES FONT_COLOR
         font_color_str = str(request.json['TEXT_PROPERTIES__FONT_COLOR'])
-        font_r, font_g, font_b = font_color_str.split(',')
-        self.indi_allsky_config['TEXT_PROPERTIES']['FONT_COLOR'] = [int(font_r), int(font_g), int(font_b)]
+        self.indi_allsky_config['TEXT_PROPERTIES']['FONT_COLOR'] = [int(x) for x in font_color_str.split(',')]
 
         # CARDINAL_DIRS FONT_COLOR
         cardinal_dirs_color_str = str(request.json['CARDINAL_DIRS__FONT_COLOR'])
-        cardinal_r, cardinal_g, cardinal_b = cardinal_dirs_color_str.split(',')
-        self.indi_allsky_config['CARDINAL_DIRS']['FONT_COLOR'] = [int(cardinal_r), int(cardinal_g), int(cardinal_b)]
+        self.indi_allsky_config['CARDINAL_DIRS']['FONT_COLOR'] = [int(x) for x in cardinal_dirs_color_str.split(',')]
 
         # ORB_PROPERTIES SUN_COLOR
         sun_color_str = str(request.json['ORB_PROPERTIES__SUN_COLOR'])
-        sun_r, sun_g, sun_b = sun_color_str.split(',')
-        self.indi_allsky_config['ORB_PROPERTIES']['SUN_COLOR'] = [int(sun_r), int(sun_g), int(sun_b)]
+        self.indi_allsky_config['ORB_PROPERTIES']['SUN_COLOR'] = [int(x) for x in sun_color_str.split(',')]
 
         # ORB_PROPERTIES MOON_COLOR
         moon_color_str = str(request.json['ORB_PROPERTIES__MOON_COLOR'])
-        moon_r, moon_g, moon_b = moon_color_str.split(',')
-        self.indi_allsky_config['ORB_PROPERTIES']['MOON_COLOR'] = [int(moon_r), int(moon_g), int(moon_b)]
+        self.indi_allsky_config['ORB_PROPERTIES']['MOON_COLOR'] = [int(x) for x in moon_color_str.split(',')]
+
+        # IMAGE_BORDER COLOR
+        image_border__color_str = str(request.json['IMAGE_BORDER__COLOR'])
+        self.indi_allsky_config['IMAGE_BORDER']['COLOR'] = [int(x) for x in image_border__color_str.split(',')]
+
+        # LIGHTGRAPH COLORS
+        lightgraph_overlay__day_color_str = str(request.json['LIGHTGRAPH_OVERLAY__DAY_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['DAY_COLOR'] = [int(x) for x in lightgraph_overlay__day_color_str.split(',')]
+
+        lightgraph_overlay__dusk_color_str = str(request.json['LIGHTGRAPH_OVERLAY__DUSK_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['DUSK_COLOR'] = [int(x) for x in lightgraph_overlay__dusk_color_str.split(',')]
+
+        lightgraph_overlay__night_color_str = str(request.json['LIGHTGRAPH_OVERLAY__NIGHT_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['NIGHT_COLOR'] = [int(x) for x in lightgraph_overlay__night_color_str.split(',')]
+
+        lightgraph_overlay__hour_color_str = str(request.json['LIGHTGRAPH_OVERLAY__HOUR_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['HOUR_COLOR'] = [int(x) for x in lightgraph_overlay__hour_color_str.split(',')]
+
+        lightgraph_overlay__border_color_str = str(request.json['LIGHTGRAPH_OVERLAY__BORDER_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['BORDER_COLOR'] = [int(x) for x in lightgraph_overlay__border_color_str.split(',')]
+
+        lightgraph_overlay__now_color_str = str(request.json['LIGHTGRAPH_OVERLAY__NOW_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['NOW_COLOR'] = [int(x) for x in lightgraph_overlay__now_color_str.split(',')]
+
+        lightgraph_overlay__font_color_str = str(request.json['LIGHTGRAPH_OVERLAY__FONT_COLOR'])
+        self.indi_allsky_config['LIGHTGRAPH_OVERLAY']['FONT_COLOR'] = [int(x) for x in lightgraph_overlay__font_color_str.split(',')]
 
 
         # Youtube tags
@@ -3067,6 +3537,242 @@ class AjaxImageViewerView(BaseView):
 
 
         return jsonify(json_data)
+
+
+class FitsImageViewerView(FormView):
+    decorators = [login_required]
+
+    def get_context(self):
+        context = super(FitsImageViewerView, self).get_context()
+
+        context['camera_id'] = self.camera.id
+
+        form_data = {
+            'CAMERA_ID'    : self.camera.id,
+            'YEAR_SELECT'  : None,
+            'MONTH_SELECT' : None,
+            'DAY_SELECT'   : None,
+            'HOUR_SELECT'  : None,
+        }
+
+
+        context['form_fits_viewer'] = IndiAllskyFitsImageViewerPreload(
+            data=form_data,
+            camera_id=self.camera.id,
+        )
+
+        return context
+
+
+class AjaxFitsImageViewerView(BaseView):
+    methods = ['POST']
+    decorators = [login_required]
+
+    def __init__(self, **kwargs):
+        super(AjaxFitsImageViewerView, self).__init__(**kwargs)
+
+
+    def dispatch_request(self):
+        camera_id  = int(request.json['CAMERA_ID'])
+        form_year  = int(request.json.get('YEAR_SELECT', 0))
+        form_month = int(request.json.get('MONTH_SELECT', 0))
+        form_day   = int(request.json.get('DAY_SELECT', 0))
+        form_hour  = int(request.json.get('HOUR_SELECT', -1))  # 0 is a real hour
+
+        self.cameraSetup(camera_id=camera_id)
+
+
+        form_viewer = IndiAllskyFitsImageViewer(
+            data=request.json,
+            camera_id=camera_id,
+        )
+
+
+        json_data = {}
+
+
+        if form_hour >= 0:
+            form_datetime = datetime.strptime('{0} {1} {2} {3}'.format(form_year, form_month, form_day, form_hour), '%Y %m %d %H')
+
+            year = form_datetime.year
+            month = form_datetime.month
+            day = form_datetime.day
+            hour = form_datetime.hour
+
+            json_data['IMAGE_DATA'] = form_viewer.getImages(year, month, day, hour)
+
+        elif form_day:
+            form_datetime = datetime.strptime('{0} {1} {2}'.format(form_year, form_month, form_day), '%Y %m %d')
+
+            year = form_datetime.year
+            month = form_datetime.month
+            day = form_datetime.day
+
+            json_data['HOUR_SELECT'] = form_viewer.getHours(year, month, day)
+            hour = json_data['HOUR_SELECT'][0][0]
+
+            json_data['IMAGE_DATA'] = form_viewer.getImages(year, month, day, hour)
+
+        elif form_month:
+            form_datetime = datetime.strptime('{0} {1}'.format(form_year, form_month), '%Y %m')
+
+            year = form_datetime.year
+            month = form_datetime.month
+
+            json_data['DAY_SELECT'] = form_viewer.getDays(year, month)
+            day = json_data['DAY_SELECT'][0][0]
+
+            json_data['HOUR_SELECT'] = form_viewer.getHours(year, month, day)
+            hour = json_data['HOUR_SELECT'][0][0]
+
+            json_data['IMAGE_DATA'] = form_viewer.getImages(year, month, day, hour)
+
+        elif form_year:
+            form_datetime = datetime.strptime('{0}'.format(form_year), '%Y')
+
+            year = form_datetime.year
+
+            json_data['MONTH_SELECT'] = form_viewer.getMonths(year)
+            month = json_data['MONTH_SELECT'][0][0]
+
+            json_data['DAY_SELECT'] = form_viewer.getDays(year, month)
+            day = json_data['DAY_SELECT'][0][0]
+
+            json_data['HOUR_SELECT'] = form_viewer.getHours(year, month, day)
+            hour = json_data['HOUR_SELECT'][0][0]
+
+            json_data['IMAGE_DATA'] = form_viewer.getImages(year, month, day, hour)
+
+        else:
+            # this happens when filtering images on detections
+            json_data['YEAR_SELECT'] = form_viewer.getYears()
+
+            if not json_data['YEAR_SELECT']:
+                # No images returned
+                json_data['YEAR_SELECT'] = (('', None),)
+                json_data['MONTH_SELECT'] = (('', None),)
+                json_data['DAY_SELECT'] = (('', None),)
+                json_data['HOUR_SELECT'] = (('', None),)
+                json_data['IMG_SELECT'] = (('', None),)
+
+                return json_data
+
+
+            year = json_data['YEAR_SELECT'][0][0]
+
+            json_data['MONTH_SELECT'] = form_viewer.getMonths(year)
+            month = json_data['MONTH_SELECT'][0][0]
+
+            json_data['DAY_SELECT'] = form_viewer.getDays(year, month)
+            day = json_data['DAY_SELECT'][0][0]
+
+            json_data['HOUR_SELECT'] = form_viewer.getHours(year, month, day)
+            hour = json_data['HOUR_SELECT'][0][0]
+
+            json_data['IMAGE_DATA'] = form_viewer.getImages(year, month, day, hour)
+
+
+        return jsonify(json_data)
+
+
+class Fits2JpegView(BaseView):
+    methods = ['GET']  # this allows the output to be cached by the browser
+    decorators = [login_required]
+
+    def __init__(self, **kwargs):
+        super(Fits2JpegView, self).__init__(**kwargs)
+
+
+    def dispatch_request(self):
+        import cv2
+        from astropy.io import fits
+        from PIL import Image
+        from multiprocessing import Value
+        from multiprocessing import Array
+
+        fits_id = int(request.args['id'])
+
+
+        table = IndiAllSkyDbFitsImageTable
+
+        try:
+            fits_entry = table.query\
+                .filter(table.id == fits_id)\
+                .one()
+        except NoResultFound:
+            return 'FITS not found', 404
+
+
+        self.cameraSetup(camera_id=fits_entry.camera_id)
+
+
+        filename_p = Path(fits_entry.getFilesystemPath())
+
+
+        p_config = self.indi_allsky_config.copy()
+
+
+        hdulist = fits.open(filename_p)
+
+        exposure = float(hdulist[0].header.get('EXPTIME', 0))
+        position_av = Array('f', [self.camera.latitude, self.camera.longitude, self.camera.elevation])
+        gain_v = Value('i', int(hdulist[0].header.get('GAIN', 0)))
+        bin_v = Value('i', int(hdulist[0].header.get('XBINNING', 1)))
+        sensors_temp_av = Array('f', [float(hdulist[0].header.get('CCD-TEMP', 0))])
+        sensors_user_av = Array('f', [float(hdulist[0].header.get('CCD-TEMP', 0))])
+        night_v = Value('i', 1)  # using night values for processing
+
+        hdulist.close()
+
+        moonmode_v = Value('i', 0)
+        image_processor = ImageProcessor(
+            p_config,
+            position_av,
+            gain_v,
+            bin_v,
+            sensors_temp_av,
+            sensors_user_av,
+            night_v,
+            moonmode_v,
+            {},    # astrometric_data
+        )
+
+        processing_start = time.time()
+
+
+        image_processor.add(filename_p, exposure, datetime.now(), 0.0, fits_entry.camera)
+
+        image_processor.debayer()
+
+        image_processor.stack()  # this populates self.image
+
+        image_processor.convert_16bit_to_8bit()
+
+
+        # verticle flip
+        if p_config.get('IMAGE_FLIP_V'):
+            image_processor.flip_v()
+
+        # horizontal flip
+        if p_config.get('IMAGE_FLIP_H'):
+            image_processor.flip_h()
+
+
+        image_processor.colorize()
+
+
+        processing_elapsed_s = time.time() - processing_start
+        app.logger.info('Image processed in %0.4f s', processing_elapsed_s)
+
+
+        image = image_processor.image
+
+
+        image_f = io.BytesIO()
+        img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        img.save(image_f, format='JPEG', quality=90)
+
+        return Response(image_f.getvalue(), mimetype='image/jpeg')
 
 
 class GalleryViewerView(FormView):
@@ -3491,8 +4197,10 @@ class SystemInfoView(TemplateView):
         context['net_list'] = self.getNetworkIps()
 
         context['indiserver_service_activestate'], context['indiserver_service_unitstate'] = self.getSystemdUnitStatus(app.config['INDISERVER_SERVICE_NAME'])
+        context['indiserver_timer_activestate'], context['indiserver_timer_unitstate'] = self.getSystemdUnitStatus(app.config['INDISERVER_TIMER_NAME'])
         context['indi_allsky_service_activestate'], context['indi_allsky_service_unitstate'] = self.getSystemdUnitStatus(app.config['ALLSKY_SERVICE_NAME'])
         context['indi_allsky_timer_activestate'], context['indi_allsky_timer_unitstate'] = self.getSystemdUnitStatus(app.config['ALLSKY_TIMER_NAME'])
+        context['indiserver_next_trigger'] = self.getSystemdTimerTrigger(app.config['INDISERVER_TIMER_NAME'])
         context['indi_allsky_next_trigger'] = self.getSystemdTimerTrigger(app.config['ALLSKY_TIMER_NAME'])
         context['gunicorn_indi_allsky_service_activestate'], context['gunicorn_indi_allsky_service_unitstate'] = self.getSystemdUnitStatus(app.config['GUNICORN_SERVICE_NAME'])
         context['gunicorn_indi_allsky_socket_activestate'], context['gunicorn_indi_allsky_socket_unitstate'] = self.getSystemdUnitStatus(app.config['GUNICORN_SOCKET_NAME'])
@@ -3923,10 +4631,10 @@ class AjaxSystemInfoView(BaseView):
                 r = self.stopSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
             elif command == 'start':
                 r = self.startSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
-            elif command == 'disable':
-                r = self.disableSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
-            elif command == 'enable':
-                r = self.enableSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
+            #elif command == 'disable':
+            #    r = self.disableSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
+            #elif command == 'enable':
+            #    r = self.enableSystemdUnit(app.config['INDISERVER_SERVICE_NAME'])
             else:
                 errors_data = {
                     'COMMAND_HIDDEN' : ['Unhandled command'],
@@ -3954,6 +4662,21 @@ class AjaxSystemInfoView(BaseView):
                 r = self.stopSystemdUnit(app.config['ALLSKY_SERVICE_NAME'])
             elif command == 'start':
                 r = self.startSystemdUnit(app.config['ALLSKY_SERVICE_NAME'])
+            #elif command == 'disable':
+            #    r = self.disableSystemdUnit(app.config['ALLSKY_SERVICE_NAME'])
+            #elif command == 'enable':
+            #    r = self.enableSystemdUnit(app.config['ALLSKY_SERVICE_NAME'])
+            else:
+                errors_data = {
+                    'COMMAND_HIDDEN' : ['Unhandled command'],
+                }
+                return jsonify(errors_data), 400
+
+        elif service == app.config['INDISERVER_TIMER_NAME']:
+            if command == 'disable':
+                r = self.disableSystemdUnit(app.config['INDISERVER_TIMER_NAME'])
+            elif command == 'enable':
+                r = self.enableSystemdUnit(app.config['INDISERVER_TIMER_NAME'])
             else:
                 errors_data = {
                     'COMMAND_HIDDEN' : ['Unhandled command'],
@@ -5328,12 +6051,19 @@ class JsonFocusView(JsonView):
     def dispatch_request(self):
         import numpy
         import cv2
+        from multiprocessing import Value
         import PIL
         from PIL import Image
+        from ..stars import IndiAllSkyStars
 
         zoom = int(request.args.get('zoom', 2))
         x_offset = int(request.args.get('x_offset', 0))
         y_offset = int(request.args.get('y_offset', 0))
+
+
+        bin_v = Value('i', 1)
+        stars_detect = IndiAllSkyStars(self.indi_allsky_config, bin_v, mask=None)
+
 
         json_data = dict()
         json_data['focus_mode'] = self.indi_allsky_config.get('FOCUS_MODE', False)
@@ -5347,6 +6077,9 @@ class JsonFocusView(JsonView):
         except PIL.UnidentifiedImageError:
             app.logger.error('Unable to read %s', latest_image_p)
             return jsonify({}), 400
+
+
+        stars = stars_detect.detectObjects(image_data)
 
 
         image_height, image_width = image_data.shape[:2]
@@ -5379,6 +6112,7 @@ class JsonFocusView(JsonView):
         ### determine variance of laplacian
         blur_score = cv2.Laplacian(image_roi, cv2.CV_32F).var()
         json_data['blur_score'] = float(blur_score)
+        json_data['star_count'] = len(stars)
 
         vl_elapsed_s = time.time() - vl_start
         app.logger.info('Variance of laplacien in %0.4f s', vl_elapsed_s)
@@ -5397,7 +6131,7 @@ class AjaxFocusControllerView(BaseView):
 
 
     def dispatch_request(self):
-        from ..focuser import IndiAllSkyFocuser
+        from ..focuser import IndiAllSkyFocuserInterface
         from ..devices.exceptions import DeviceControlException
 
 
@@ -5409,6 +6143,7 @@ class AjaxFocusControllerView(BaseView):
 
 
         form_focuscontroller = IndiAllskyFocusControllerForm(data=request.json)
+
 
         if not form_focuscontroller.validate():
             form_errors = form_focuscontroller.errors  # this must be a property
@@ -5428,7 +6163,7 @@ class AjaxFocusControllerView(BaseView):
         app.logger.info('Focusing: {0:s}', direction)
 
         try:
-            focuser = IndiAllSkyFocuser(self.indi_allsky_config)
+            focuser_interface = IndiAllSkyFocuserInterface(self.indi_allsky_config)
         except SystemError as e:
             json_data = {
                 'focuser_error' : ['Error initializing focuser: {0:s}'.format(str(e))],
@@ -5447,7 +6182,7 @@ class AjaxFocusControllerView(BaseView):
 
 
         try:
-            steps_offset = focuser.move(direction, degrees)
+            steps_offset = focuser_interface.move(direction, degrees)
         except DeviceControlException as e:
             json_data = {
                 'focuser_error' : ['Error moving focuser: {0:s}'.format(str(e))],
@@ -5520,6 +6255,7 @@ class ImageProcessingView(TemplateView):
             'WBB_FACTOR'                     : self.indi_allsky_config.get('WBB_FACTOR', 1.0),
             'AUTO_WB'                        : self.indi_allsky_config.get('AUTO_WB', False),
             'SATURATION_FACTOR'              : self.indi_allsky_config.get('SATURATION_FACTOR', 1.0),
+            'GAMMA_CORRECTION'               : self.indi_allsky_config.get('GAMMA_CORRECTION', 1.0),
             'IMAGE_ROTATE'                   : self.indi_allsky_config.get('IMAGE_ROTATE', ''),
             'IMAGE_ROTATE_ANGLE'             : self.indi_allsky_config.get('IMAGE_ROTATE_ANGLE', 0),
             'IMAGE_FLIP_V'                   : self.indi_allsky_config.get('IMAGE_FLIP_V', True),
@@ -5663,6 +6399,7 @@ class JsonImageProcessingView(JsonView):
         p_config['WBG_FACTOR']                           = float(request.json['WBG_FACTOR'])
         p_config['WBB_FACTOR']                           = float(request.json['WBB_FACTOR'])
         p_config['SATURATION_FACTOR']                    = float(request.json['SATURATION_FACTOR'])
+        p_config['GAMMA_CORRECTION']                     = float(request.json['GAMMA_CORRECTION'])
         p_config['IMAGE_ROTATE']                         = str(request.json['IMAGE_ROTATE'])
         p_config['IMAGE_ROTATE_ANGLE']                   = int(request.json['IMAGE_ROTATE_ANGLE'])
         p_config['IMAGE_FLIP_V']                         = bool(request.json['IMAGE_FLIP_V'])
@@ -5699,9 +6436,9 @@ class JsonImageProcessingView(JsonView):
 
         hdulist = fits.open(filename_p)
 
-        exposure = float(hdulist[0].header['EXPTIME'])
+        exposure = float(hdulist[0].header.get('EXPTIME', 0))
         position_av = Array('f', [self.camera.latitude, self.camera.longitude, self.camera.elevation])
-        gain_v = Value('i', int(hdulist[0].header['GAIN']))
+        gain_v = Value('i', int(hdulist[0].header.get('GAIN', 0)))
         bin_v = Value('i', int(hdulist[0].header.get('XBINNING', 1)))
         sensors_temp_av = Array('f', [float(hdulist[0].header.get('CCD-TEMP', 0))])
         sensors_user_av = Array('f', [float(hdulist[0].header.get('CCD-TEMP', 0))])
@@ -5732,31 +6469,23 @@ class JsonImageProcessingView(JsonView):
 
             image_processor.add(filename_p, exposure, datetime.now(), 0.0, fits_entry.camera)
 
-            image_processor.fits2opencv()
+            image_processor.debayer()
 
             image_processor.stack()  # this populates self.image
-
-            image_processor.debayer()
 
             image_processor.convert_16bit_to_8bit()
 
 
-            if p_config.get('IMAGE_ROTATE'):
-                image_processor.rotate_90()
-
-
             # rotation
-            if p_config.get('IMAGE_ROTATE_ANGLE'):
-                image_processor.rotate_angle()
+            image_processor.rotate_90()
+            image_processor.rotate_angle()
 
 
             # verticle flip
-            if p_config.get('IMAGE_FLIP_V'):
-                image_processor.flip_v()
+            image_processor.flip_v()
 
             # horizontal flip
-            if p_config.get('IMAGE_FLIP_H'):
-                image_processor.flip_h()
+            image_processor.flip_h()
 
 
             image_processor.colorize()
@@ -5775,11 +6504,12 @@ class JsonImageProcessingView(JsonView):
 
                 for f_image in fits_image_query:
                     alt_hdulist = fits.open(filename_p)
-                    alt_exposure = float(alt_hdulist[0].header['EXPTIME'])
+                    alt_exposure = float(alt_hdulist[0].header.get('EXPTIME', 0))
                     alt_hdulist.close()
 
                     i_ref = image_processor.add(f_image.getFilesystemPath(), alt_exposure, datetime.now(), 0.0, f_image.camera)
                     image_processor._calibrate(i_ref)
+                    image_processor._debayer(i_ref)
 
                 message_list.append('Stacked {0:d} images'.format(p_config['IMAGE_STACK_COUNT']))
 
@@ -5787,13 +6517,11 @@ class JsonImageProcessingView(JsonView):
             # add image after preloading other images
             image_processor.add(filename_p, exposure, datetime.now(), 0.0, fits_entry.camera)
 
-            image_processor.calibrate()  # sets opencv_data
-
-            image_processor.fits2opencv()
-
-            image_processor.stack()  # this populates self.image
+            image_processor.calibrate()
 
             image_processor.debayer()
+
+            image_processor.stack()  # this populates self.image
 
             image_processor.stretch()
 
@@ -5826,23 +6554,20 @@ class JsonImageProcessingView(JsonView):
 
 
             # green removal
-            if p_config.get('SCNR_ALGORITHM'):
-                image_processor.scnr()
-
-                message_list.append('SCNR')
+            image_processor.scnr()
 
 
             # white balance
             image_processor.white_balance_manual_bgr()
-
-            if p_config.get('AUTO_WB'):
-                image_processor.white_balance_auto_bgr()
-
-                message_list.append('Auto White Balance')
+            image_processor.white_balance_auto_bgr()
 
 
             # saturation
             image_processor.saturation_adjust()
+
+
+            # gamma correction
+            image_processor.apply_gamma_correction()
 
 
             if p_config['NIGHT_CONTRAST_ENHANCE']:
@@ -5901,6 +6626,7 @@ class LogView(TemplateView):
 
 
 class JsonLogView(JsonView):
+    methods = ['POST']
     decorators = [login_required]
 
     def __init__(self, **kwargs):
@@ -5910,9 +6636,17 @@ class JsonLogView(JsonView):
     def dispatch_request(self):
         line_size = 150  # assuming lines have an average length
 
-        lines = int(request.args.get('lines', 500))
+        lines = int(request.json.get('lines', 500))
+        filter_str = str(request.json.get('filter', ''))[:30]  # limit to 30 characters
+
 
         json_data = dict()
+
+
+        filter_regex = r'^[a-zA-Z0-9_\.\-\\\ ]*$'
+        if not re.search(filter_regex, filter_str):
+            json_data['log'] = 'ERROR: Log filter has illegal characters'
+            return jsonify(json_data)
 
 
         if lines > 5000:
@@ -5955,6 +6689,21 @@ class JsonLogView(JsonView):
         except IndexError:
             app.logger.warning('indi-allsky log empty')
             log_lines = list()
+
+
+        if filter_str:
+            filter_regex = re.compile(filter_str, re.IGNORECASE)
+
+            filtered_lines = list()
+            for line in log_lines:
+                ### this is probably insecure
+                if not re.search(filter_regex, line):
+                    continue
+
+                filtered_lines.append(line)
+
+            # replace original
+            log_lines = filtered_lines
 
 
         json_data['log'] = ''.join(log_lines)
@@ -6577,7 +7326,7 @@ class TimelapseImageView(TemplateView):
         else:
             context['timeofday'] = 'Day'
 
-        context['createDate_full'] = image.createDate.strftime('%B %d, %Y - %H:%M:%S')
+        context['createDate_full'] = image.dayDate.strftime('%B %d, %Y - %H:%M:%S')
         context['image_url'] = image.getUrl(s3_prefix=self.s3_prefix, local=local)
 
 
@@ -6806,6 +7555,232 @@ class AjaxMiniTimelapseGeneratorView(BaseView):
         }
 
         return jsonify(message)
+
+
+class LongTermKeogramView(TemplateView):
+    decorators = [login_required]
+    title = 'Long Term Keogram'
+
+
+    def get_context(self):
+        context = super(LongTermKeogramView, self).get_context()
+
+
+        context['title'] = self.title
+        context['camera_id'] = self.camera.id
+
+        data = {
+            'CAMERA_ID' : self.camera.id
+        }
+
+        context['form_longterm_keogram'] = IndiAllskyLongTermKeogramForm(data=data)
+
+        return context
+
+
+class JsonLongTermKeogramView(JsonView):
+    methods = ['POST']
+    decorators = [login_required]
+
+
+    def __init__(self, **kwargs):
+        super(JsonLongTermKeogramView, self).__init__(**kwargs)
+
+
+    def dispatch_request(self):
+        import numpy
+        import cv2
+        from PIL import Image
+
+        form_longterm_keogram = IndiAllskyLongTermKeogramForm(data=request.json)
+
+        if not form_longterm_keogram.validate():
+            form_errors = form_longterm_keogram.errors  # this must be a property
+            return jsonify(form_errors), 400
+
+
+        camera_id = int(request.json['CAMERA_ID'])
+        end = str(request.json['END_SELECT'])
+        query_days = int(request.json['DAYS_SELECT'])
+        period_pixels = int(request.json['PIXELS_SELECT'])
+        alignment_seconds = int(request.json['ALIGNMENT_SELECT'])
+        offset_seconds = int(request.json['OFFSET_SELECT'])
+
+
+        if query_days > 2000:
+            # sanity check (more than 5 years)
+            json_data = {
+                'failure-message' : 'Try again',
+            }
+            return jsonify(json_data), 400
+
+
+        if alignment_seconds < 5:
+            # sanity check
+            json_data = {
+                'failure-message' : 'Try again',
+            }
+            return jsonify(json_data), 400
+
+        if offset_seconds > 43200:
+            # sanity check
+            json_data = {
+                'failure-message' : 'Try again',
+            }
+            return jsonify(json_data), 400
+
+
+        keogram_start = time.time()
+
+        periods_per_day = int(86400 / alignment_seconds)
+
+        if end == 'today':
+            tomorrow = datetime.now() + timedelta(hours=24)  # need to start noon tomorrow
+            query_end_date = datetime.strptime(tomorrow.strftime('%Y%m%d_120000'), '%Y%m%d_%H%M%S')
+            query_start_date = query_end_date - timedelta(days=query_days)
+        elif end == 'thisyear':
+            thisyear = datetime.now().year
+            query_end_date = datetime.strptime('{0:d}1231_120000'.format(thisyear), '%Y%m%d_%H%M%S')
+            query_start_date = query_end_date - timedelta(days=query_days)
+        elif end == 'lastyear':
+            lastyear = datetime.now().year - 1
+            query_end_date = datetime.strptime('{0:d}1231_120000'.format(lastyear), '%Y%m%d_%H%M%S')
+            query_start_date = query_end_date - timedelta(days=query_days)
+        else:
+            json_data = {
+                'failure-message' : 'Invalid end selection',
+            }
+            return jsonify(json_data), 400
+
+
+        if query_days == 42:
+            # special condition to show all available data
+            first_entry = db.session.query(
+                IndiAllSkyDbLongTermKeogramTable.ts,
+            )\
+                .join(IndiAllSkyDbCameraTable)\
+                .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+                .order_by(IndiAllSkyDbLongTermKeogramTable.ts.asc())\
+                .first()
+
+
+            first_date = datetime.fromtimestamp(first_entry.ts)
+            query_start_date = datetime.strptime(first_date.strftime('%Y%m%d_120000'), '%Y%m%d_%H%M%S')
+
+
+        query_start_ts = query_start_date.timestamp() - offset_seconds  # subtract offset
+        query_end_ts = query_end_date.timestamp() - offset_seconds
+
+
+        total_days = math.ceil((query_end_ts - query_start_ts) / 86400)
+
+        query_start_offset = int(query_start_ts / alignment_seconds)
+
+
+
+        ltk_interval = func.floor(IndiAllSkyDbLongTermKeogramTable.ts / alignment_seconds).label('interval')
+
+        q = db.session.query(
+            ltk_interval,
+            func.avg(IndiAllSkyDbLongTermKeogramTable.r1).label('r1_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.b1).label('b1_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.g1).label('g1_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.r2).label('r2_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.b2).label('b2_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.g2).label('g2_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.r3).label('r3_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.b3).label('b3_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.g3).label('g3_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.r4).label('r4_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.b4).label('b4_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.g4).label('g4_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.r5).label('r5_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.b5).label('b5_avg'),
+            func.avg(IndiAllSkyDbLongTermKeogramTable.g5).label('g5_avg'),
+        )\
+            .join(IndiAllSkyDbCameraTable)\
+            .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+            .filter(IndiAllSkyDbLongTermKeogramTable.ts >= query_start_ts)\
+            .filter(IndiAllSkyDbLongTermKeogramTable.ts < query_end_ts)\
+            .group_by(ltk_interval)
+
+        ### order is unnecessary
+        #    .order_by(ltk_interval.asc())
+
+
+        numpy_data = numpy.zeros(((periods_per_day * total_days) * period_pixels, 1, 3), dtype=numpy.uint8)
+        #app.logger.info('Rows: %d', q.count())
+
+
+        query_limit = 300000  # limit memory impact on database
+
+        i = 0
+        while i % query_limit == 0:
+            q_offset = q.offset(i).limit(query_limit)
+
+            for row in q_offset:
+                second_offset = row.interval - query_start_offset
+                day = int(second_offset / periods_per_day)
+                index = second_offset + (day * (periods_per_day * (period_pixels - 1)))
+
+                if period_pixels == 5:
+                    numpy_data[index + (periods_per_day * 4)] = row.b5_avg, row.g5_avg, row.r5_avg
+                    numpy_data[index + (periods_per_day * 3)] = row.b4_avg, row.g4_avg, row.r4_avg
+                    numpy_data[index + (periods_per_day * 2)] = row.b3_avg, row.g3_avg, row.r3_avg
+                    numpy_data[index + (periods_per_day * 1)] = row.b2_avg, row.g2_avg, row.r2_avg
+
+                elif period_pixels == 4:
+                    numpy_data[index + (periods_per_day * 3)] = row.b4_avg, row.g4_avg, row.r4_avg
+                    numpy_data[index + (periods_per_day * 2)] = row.b3_avg, row.g3_avg, row.r3_avg
+                    numpy_data[index + (periods_per_day * 1)] = row.b2_avg, row.g2_avg, row.r2_avg
+
+                elif period_pixels == 3:
+                    numpy_data[index + (periods_per_day * 2)] = row.b3_avg, row.g3_avg, row.r3_avg
+                    numpy_data[index + (periods_per_day * 1)] = row.b2_avg, row.g2_avg, row.r2_avg
+
+                elif period_pixels == 2:
+                    numpy_data[index + (periods_per_day * 1)] = row.b2_avg, row.g2_avg, row.r2_avg
+
+
+                # always add 1 row
+                numpy_data[index] = row.b1_avg, row.g1_avg, row.r1_avg
+
+                i += 1
+
+
+        keogram_data = numpy.reshape(numpy_data, ((total_days * period_pixels), periods_per_day, 3))
+        keogram_data = numpy.flip(keogram_data, axis=0)  # newer data at top
+        #app.logger.info(keogram_data.shape)
+
+
+        # sanity check
+        keogram_data[keogram_data < 0] = 0
+        keogram_data[keogram_data > 255] = 255
+
+
+        png_compression = self.indi_allsky_config.get('IMAGE_FILE_COMPRESSION', {}).get('png', 5)
+
+
+        image_buffer = io.BytesIO()
+        img = Image.fromarray(cv2.cvtColor(keogram_data, cv2.COLOR_BGR2RGB))
+        img.save(image_buffer, format='PNG', compress_level=png_compression)
+
+
+        json_image_b64 = base64.b64encode(image_buffer.getvalue())
+
+
+        keogram_elapsed_s = time.time() - keogram_start
+        app.logger.warning('Long Term Keogram in %0.4f s', keogram_elapsed_s)
+
+
+        json_data = {
+            'image_b64' : json_image_b64.decode('utf-8'),
+            'processing_time' : round(keogram_elapsed_s, 3),
+            'success-message' : '',
+        }
+
+
+        return jsonify(json_data)
 
 
 class AstroPanelView(TemplateView):
@@ -7201,13 +8176,17 @@ def images_folder(path):
 bp_allsky.add_url_rule('/ajax/status_update', view_func=AjaxStatusUpdateView.as_view('ajax_status_update_view'))
 
 bp_allsky.add_url_rule('/', view_func=IndexView.as_view('index_view', template_name='index.html'))
+bp_allsky.add_url_rule('/index_img', view_func=IndexImgView.as_view('index_img_view', template_name='index_img.html'))
 bp_allsky.add_url_rule('/js/latest', view_func=JsonLatestImageView.as_view('js_latest_image_view'))
 bp_allsky.add_url_rule('/panorama', view_func=LatestPanoramaView.as_view('latest_panorama_view', template_name='index.html'))
+bp_allsky.add_url_rule('/panorama_img', view_func=LatestPanoramaImgView.as_view('latest_panorama_img_view', template_name='index_img.html'))
 bp_allsky.add_url_rule('/js/latest_panorama', view_func=JsonLatestPanoramaView.as_view('js_latest_panorama_view'))
 bp_allsky.add_url_rule('/raw', view_func=LatestRawImageView.as_view('latest_rawimage_view', template_name='index.html'))
 bp_allsky.add_url_rule('/js/latest_rawimage', view_func=JsonLatestRawImageView.as_view('js_latest_rawimage_view'))
+bp_allsky.add_url_rule('/realtime_keogram', view_func=RealtimeKeogramView.as_view('realtime_keogram_view', template_name='realtime_keogram.html'))
 
 bp_allsky.add_url_rule('/loop', view_func=ImageLoopView.as_view('image_loop_view', template_name='loop.html'))
+bp_allsky.add_url_rule('/loop_img', view_func=ImageLoopImgView.as_view('image_loop_img_view', template_name='loop_img.html'))
 bp_allsky.add_url_rule('/js/loop', view_func=JsonImageLoopView.as_view('js_image_loop_view'))
 bp_allsky.add_url_rule('/looppanorama', view_func=PanoramaLoopView.as_view('panorama_loop_view', template_name='loop.html'))
 bp_allsky.add_url_rule('/js/looppanorama', view_func=JsonPanoramaLoopView.as_view('js_panorama_loop_view'))
@@ -7222,6 +8201,10 @@ bp_allsky.add_url_rule('/js/charts', view_func=JsonChartView.as_view('js_chart_v
 bp_allsky.add_url_rule('/imageviewer', view_func=ImageViewerView.as_view('imageviewer_view', template_name='imageviewer.html'))
 bp_allsky.add_url_rule('/ajax/imageviewer', view_func=AjaxImageViewerView.as_view('ajax_imageviewer_view'))
 bp_allsky.add_url_rule('/ajax/exclude', view_func=AjaxImageExcludeView.as_view('ajax_image_exclude_view'))
+
+bp_allsky.add_url_rule('/fitsimageviewer', view_func=FitsImageViewerView.as_view('fitsimageviewer_view', template_name='fitsimageviewer.html'))
+bp_allsky.add_url_rule('/ajax/fitsimageviewer', view_func=AjaxFitsImageViewerView.as_view('ajax_fitsimageviewer_view'))
+bp_allsky.add_url_rule('/fits2jpeg', view_func=Fits2JpegView.as_view('fits2jpeg_view'))
 
 bp_allsky.add_url_rule('/gallery', view_func=GalleryViewerView.as_view('gallery_view', template_name='gallery.html'))
 bp_allsky.add_url_rule('/ajax/gallery', view_func=AjaxGalleryViewerView.as_view('ajax_gallery_view'))
@@ -7275,6 +8258,9 @@ bp_allsky.add_url_rule('/ajax/astropanel', view_func=AjaxAstroPanelView.as_view(
 bp_allsky.add_url_rule('/processing', view_func=ImageProcessingView.as_view('image_processing_view', template_name='imageprocessing.html'))
 bp_allsky.add_url_rule('/js/processing', view_func=JsonImageProcessingView.as_view('js_image_processing_view'))
 
+bp_allsky.add_url_rule('/longtermkeogram', view_func=LongTermKeogramView.as_view('longterm_keogram_view', template_name='longterm_keogram.html'))
+bp_allsky.add_url_rule('/js/longtermkeogram', view_func=JsonLongTermKeogramView.as_view('js_longterm_keogram_view'))
+
 bp_allsky.add_url_rule('/camera', view_func=CameraLensView.as_view('camera_lens_view', template_name='cameraLens.html'))
 bp_allsky.add_url_rule('/lag', view_func=ImageLagView.as_view('image_lag_view', template_name='lag.html'))
 bp_allsky.add_url_rule('/adu', view_func=RollingAduView.as_view('rolling_adu_view', template_name='adu.html'))
@@ -7306,7 +8292,7 @@ bp_allsky.add_url_rule('/latestpanoramavideo', view_func=LatestPanoramaVideoRedi
 
 bp_allsky.add_url_rule('/latestimageview', view_func=LatestImageViewRedirect.as_view('latest_image_view_redirect_view'))
 bp_allsky.add_url_rule('/latestkeogramview', view_func=LatestKeogramViewRedirect.as_view('latest_keogram_view_redirect_view'))
-bp_allsky.add_url_rule('/lateststartrailview', view_func=LatestKeogramViewRedirect.as_view('latest_startrail_view_redirect_view'))
+bp_allsky.add_url_rule('/lateststartrailview', view_func=LatestStartrailViewRedirect.as_view('latest_startrail_view_redirect_view'))
 bp_allsky.add_url_rule('/latestpanoramaview', view_func=LatestPanoramaImageViewRedirect.as_view('latest_panorama_image_view_redirect_view'))
 bp_allsky.add_url_rule('/latestrawview', view_func=LatestRawImageViewRedirect.as_view('latest_raw_image_view_redirect_view'))
 bp_allsky.add_url_rule('/latesttimelapsewatch', view_func=LatestTimelapseVideoWatchRedirect.as_view('latest_timelapse_video_watch_redirect_view'))

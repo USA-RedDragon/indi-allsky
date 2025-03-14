@@ -28,6 +28,7 @@ __all__ = (
     'IndiAllSkyDbRawImageTable',
     'IndiAllSkyDbPanoramaImageTable',
     'IndiAllSkyDbPanoramaVideoTable',
+    'IndiAllSkyDbLongTermKeogramTable',
     'TaskQueueState', 'TaskQueueQueue', 'IndiAllSkyDbTaskQueueTable',
     'NotificationCategory', 'IndiAllSkyDbNotificationTable',
     'IndiAllSkyDbStateTable',
@@ -105,6 +106,7 @@ class IndiAllSkyDbCameraTable(db.Model):
     rawimages = db.relationship('IndiAllSkyDbRawImageTable', back_populates='camera')
     panoramaimages = db.relationship('IndiAllSkyDbPanoramaImageTable', back_populates='camera')
     panoramavideos = db.relationship('IndiAllSkyDbPanoramaVideoTable', back_populates='camera')
+    longtermkeograms = db.relationship('IndiAllSkyDbLongTermKeogramTable', back_populates='camera')
 
 
     @property
@@ -425,7 +427,7 @@ class IndiAllSkyDbVideoTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     framerate = db.Column(db.Float, server_default='0', nullable=False)
     frames = db.Column(db.Integer, server_default='0', nullable=False)
     #kpindex = db.Column(db.Float, nullable=True, index=True)
@@ -468,7 +470,7 @@ class IndiAllSkyDbMiniVideoTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     targetDate = db.Column(db.DateTime(), nullable=False, index=True)
     startDate = db.Column(db.DateTime(), nullable=False)
     endDate = db.Column(db.DateTime(), nullable=False)
@@ -508,7 +510,7 @@ class IndiAllSkyDbKeogramTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     frames = db.Column(db.Integer, server_default='0', nullable=False)
     width = db.Column(db.Integer, nullable=True, index=True)
     height = db.Column(db.Integer, nullable=True, index=True)
@@ -543,7 +545,7 @@ class IndiAllSkyDbStarTrailsTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     frames = db.Column(db.Integer, server_default='0', nullable=False)
     width = db.Column(db.Integer, nullable=True, index=True)
     height = db.Column(db.Integer, nullable=True, index=True)
@@ -578,7 +580,7 @@ class IndiAllSkyDbStarTrailsVideoTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     framerate = db.Column(db.Float, server_default='0', nullable=False)
     frames = db.Column(db.Integer, server_default='0', nullable=False)
     width = db.Column(db.Integer, nullable=True, index=True)  # this may never be populated
@@ -610,6 +612,10 @@ class IndiAllSkyDbFitsImageTable(IndiAllSkyDbFileBase):
     remote_url = db.Column(db.String(length=255), nullable=True, index=True)
     s3_key = db.Column(db.String(length=255), nullable=True, index=True)
     createDate = db.Column(db.DateTime(), nullable=False, index=True, server_default=db.func.now())
+    createDate_year = db.Column(db.Integer, nullable=True, index=True)
+    createDate_month = db.Column(db.Integer, nullable=True, index=True)
+    createDate_day = db.Column(db.Integer, nullable=True, index=True)
+    createDate_hour = db.Column(db.Integer, nullable=True, index=True)
     dayDate = db.Column(db.Date, nullable=False, index=True)
     exposure = db.Column(db.Float, nullable=False)
     gain = db.Column(db.Integer, nullable=False)
@@ -627,6 +633,18 @@ class IndiAllSkyDbFitsImageTable(IndiAllSkyDbFileBase):
         return '<FitsImage {0:s}>'.format(self.filename)
 
 
+    db.Index(
+        'idx_fitsimage_createDate_iYmdH_2',
+        camera_id,
+        createDate_year,
+        createDate_month,
+        createDate_day,
+        createDate_hour,
+        remote_url,
+        s3_key,
+    )
+
+
 class IndiAllSkyDbRawImageTable(IndiAllSkyDbFileBase):
     __tablename__ = 'rawimage'
 
@@ -636,6 +654,10 @@ class IndiAllSkyDbRawImageTable(IndiAllSkyDbFileBase):
     remote_url = db.Column(db.String(length=255), nullable=True, index=True)
     s3_key = db.Column(db.String(length=255), nullable=True, index=True)
     createDate = db.Column(db.DateTime(), nullable=False, index=True, server_default=db.func.now())
+    createDate_year = db.Column(db.Integer, nullable=True, index=True)
+    createDate_month = db.Column(db.Integer, nullable=True, index=True)
+    createDate_day = db.Column(db.Integer, nullable=True, index=True)
+    createDate_hour = db.Column(db.Integer, nullable=True, index=True)
     dayDate = db.Column(db.Date, nullable=False, index=True)
     exposure = db.Column(db.Float, nullable=False)
     gain = db.Column(db.Integer, nullable=False)
@@ -651,6 +673,18 @@ class IndiAllSkyDbRawImageTable(IndiAllSkyDbFileBase):
 
     def __repr__(self):
         return '<RawImage {0:s}>'.format(self.filename)
+
+
+    db.Index(
+        'idx_rawimage_createDate_iYmdH_2',
+        camera_id,
+        createDate_year,
+        createDate_month,
+        createDate_day,
+        createDate_hour,
+        remote_url,
+        s3_key,
+    )
 
 
 class IndiAllSkyDbPanoramaImageTable(IndiAllSkyDbFileBase):
@@ -719,7 +753,7 @@ class IndiAllSkyDbPanoramaVideoTable(IndiAllSkyDbFileBase):
     night = db.Column(db.Boolean, default=expression.true(), nullable=False, index=True)
     uploaded = db.Column(db.Boolean, server_default=expression.false(), nullable=False)
     sync_id = db.Column(db.Integer, nullable=True, index=True)
-    success = db.Column(db.Boolean, server_default=expression.true(), nullable=False, index=True)
+    success = db.Column(db.Boolean, server_default=expression.false(), nullable=False, index=True)
     framerate = db.Column(db.Float, server_default='0', nullable=False)
     frames = db.Column(db.Integer, server_default='0', nullable=False)
     width = db.Column(db.Integer, nullable=True, index=True)  # this may never be populated
@@ -739,6 +773,37 @@ class IndiAllSkyDbPanoramaVideoTable(IndiAllSkyDbFileBase):
         remote_url,
         s3_key,
         camera_id,
+    )
+
+
+class IndiAllSkyDbLongTermKeogramTable(db.Model):
+    __tablename__ = 'longtermkeogram'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ts = db.Column(db.Integer, nullable=False, index=True)
+    r1 = db.Column(db.Integer, nullable=False)
+    g1 = db.Column(db.Integer, nullable=False)
+    b1 = db.Column(db.Integer, nullable=False)
+    r2 = db.Column(db.Integer, nullable=False)
+    g2 = db.Column(db.Integer, nullable=False)
+    b2 = db.Column(db.Integer, nullable=False)
+    r3 = db.Column(db.Integer, nullable=False)
+    g3 = db.Column(db.Integer, nullable=False)
+    b3 = db.Column(db.Integer, nullable=False)
+    r4 = db.Column(db.Integer, nullable=False)
+    g4 = db.Column(db.Integer, nullable=False)
+    b4 = db.Column(db.Integer, nullable=False)
+    r5 = db.Column(db.Integer, nullable=False)
+    g5 = db.Column(db.Integer, nullable=False)
+    b5 = db.Column(db.Integer, nullable=False)
+    camera_id = db.Column(db.Integer, db.ForeignKey('camera.id'), nullable=False)
+    camera = db.relationship('IndiAllSkyDbCameraTable', back_populates='longtermkeograms')
+
+
+    db.Index(
+        'idx_longterm_keogram_it_2',
+        camera_id,
+        ts,
     )
 
 

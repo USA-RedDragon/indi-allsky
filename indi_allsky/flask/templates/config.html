@@ -4,7 +4,7 @@
 
 {% block head %}
 <style>
-#nav-camera-tab, #nav-image-tab, #nav-processing-tab, #nav-location-tab, #nav-admin-tab, #nav-filetransfer-tab, #nav-s3-tab, #nav-syncapi-tab, #nav-youtube-tab, #nav-mqtt-tab, #nav-devices-tab, #nav-sensors-tab, #nav-adsb-tab, #nav-sat_track-tab, #nav-timelapse-tab {
+#nav-camera-tab, #nav-image-tab, #nav-processing-tab, #nav-location-tab, #nav-admin-tab, #nav-filetransfer-tab, #nav-s3-tab, #nav-syncapi-tab, #nav-youtube-tab, #nav-mqtt-tab, #nav-devices-tab, #nav-sensors-tab, #nav-adsb-tab, #nav-sat_track-tab, #nav-timelapse-tab, #nav-overlays-tab {
 	width: 150px;
 	margin-top: 10px;
 	margin-right: 5px;
@@ -25,6 +25,10 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+.strikethrough{
+  text-decoration: line-through;
+}
 </style>
 <script type="text/javascript">
 var camera_id = {{ camera_id }};
@@ -39,8 +43,9 @@ var camera_id = {{ camera_id }};
   <div class="nav nav-tabs" id="nav-tab" role="tablist">
     <button class="nav-link link-danger bg-dark active" id="nav-camera-tab" data-bs-toggle="tab" data-bs-target="#nav-camera" type="button" role="tab" aria-controls="nav-camera" aria-selected="true">Camera</button>
     <button class="nav-link link-light bg-dark" id="nav-image-tab" data-bs-toggle="tab" data-bs-target="#nav-image" type="button" role="tab" aria-controls="nav-image" aria-selected="false">Image</button>
-    <button class="nav-link link-primary bg-dark" id="nav-timelapse-tab" data-bs-toggle="tab" data-bs-target="#nav-timelapse" type="button" role="tab" aria-controls="nav-timelapse" aria-selected="false">Timelapse</button>
     <button class="nav-link link-success bg-dark" id="nav-processing-tab" data-bs-toggle="tab" data-bs-target="#nav-processing" type="button" role="tab" aria-controls="nav-processing" aria-selected="false">Processing</button>
+    <button class="nav-link link-secondary bg-dark" id="nav-overlays-tab" data-bs-toggle="tab" data-bs-target="#nav-overlays" type="button" role="tab" aria-controls="nav-overlays" aria-selected="false">Overlays</button>
+    <button class="nav-link link-primary bg-dark" id="nav-timelapse-tab" data-bs-toggle="tab" data-bs-target="#nav-timelapse" type="button" role="tab" aria-controls="nav-timelapse" aria-selected="false">Timelapse</button>
     <button class="nav-link link-info bg-dark" id="nav-location-tab" data-bs-toggle="tab" data-bs-target="#nav-location" type="button" role="tab" aria-controls="nav-location" aria-selected="false">Location</button>
     <button class="nav-link link-warning bg-dark" id="nav-admin-tab" data-bs-toggle="tab" data-bs-target="#nav-admin" type="button" role="tab" aria-controls="nav-admin" aria-selected="false">Admin</button>
     <button class="nav-link link-primary bg-dark" id="nav-filetransfer-tab" data-bs-toggle="tab" data-bs-target="#nav-filetransfer" type="button" role="tab" aria-controls="nav-filetransfer" aria-selected="false">File Transfer</button>
@@ -54,6 +59,14 @@ var camera_id = {{ camera_id }};
     <button class="nav-link link-light bg-dark" id="nav-sat_track-tab" data-bs-toggle="tab" data-bs-target="#nav-sat_track" type="button" role="tab" aria-controls="nav-sat_track" aria-selected="false" style="font-size:14px">Satellite Tracking</button>
   </div>
 </nav>
+
+
+<!-- should be above tab contents -->
+<div>{{ longitude_validation_message | safe }}</div>
+
+{% if fits_enabled %}
+<div><span class="badge rounded-pill bg-warning text-dark">Warning</span> Saving FITS files is enabled</div>
+{% endif %}
 
 
 <div class="tab-content" id="nav-tabContent">
@@ -115,6 +128,7 @@ var camera_id = {{ camera_id }};
     <hr>
 
     <div><span class="badge rounded-pill bg-info text-dark">Note</span> A full service restart (not reload) is recommended when changing gain controls</div>
+    <div><span class="badge rounded-pill bg-info text-dark">Note </span> Many cameras will switch from analog to digital gain once the gain exceeds a certain value. For example, with ZWO cameras, you usually do not want to exceed gain 300</div>
 
     <hr>
 
@@ -127,7 +141,7 @@ var camera_id = {{ camera_id }};
             <div id="CCD_CONFIG__NIGHT__GAIN-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Camera dependent</div>
+            <div>Maximum Gain permitted: <b>{{ camera_maxGain }}</b></div>
         </div>
     </div>
     <div class="form-group row">
@@ -149,7 +163,7 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_CONFIG__MOONMODE__GAIN(class='form-control bg-secondary') }}
             <div id="CCD_CONFIG__MOONMODE__GAIN-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Camera dependent</div>
+        <div class="col-sm-8"></div>
     </div>
     <div class="form-group row">
         <div class="col-sm-2">
@@ -159,7 +173,7 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_CONFIG__MOONMODE__BINNING(class='form-control bg-secondary') }}
             <div id="CCD_CONFIG__MOONMODE__BINNING-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Min 1, Max 4 - Camera dependent</div>
+        <div class="col-sm-8"></div>
     </div>
 
     <div class="form-group row">
@@ -170,7 +184,9 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_CONFIG__DAY__GAIN(class='form-control bg-secondary') }}
             <div id="CCD_CONFIG__DAY__GAIN-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Camera dependent</div>
+        <div class="col-sm-8">
+            <div>Minimum Gain permitted: <b>{{ camera_minGain }}</b></div>
+        </div>
     </div>
     <div class="form-group row">
         <div class="col-sm-2">
@@ -180,7 +196,7 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_CONFIG__DAY__BINNING(class='form-control bg-secondary') }}
             <div id="CCD_CONFIG__DAY__BINNING-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Min 1, Max 4 - Camera dependent</div>
+        <div class="col-sm-8"></div>
     </div>
 
     <hr>
@@ -198,7 +214,7 @@ var camera_id = {{ camera_id }};
             <div id="CCD_EXPOSURE_MAX-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Min: 1 - Max: 120 seconds</div>
+            <div>Maximum Exposure permitted: <b>{{ "%0.1f" | format(camera_maxExposure | float) }}s</b></div>
         </div>
     </div>
     <div class="form-group row">
@@ -209,7 +225,9 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_EXPOSURE_DEF(class='form-control bg-secondary') }}
             <div id="CCD_EXPOSURE_DEF-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">0 = auto</div>
+        <div class="col-sm-8">
+            <div>0 = auto</div>
+        </div>
     </div>
 
     <div class="form-group row">
@@ -220,7 +238,9 @@ var camera_id = {{ camera_id }};
             {{ form_config.CCD_EXPOSURE_MIN(class='form-control bg-secondary') }}
             <div id="CCD_EXPOSURE_MIN-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">0 = auto</div>
+        <div class="col-sm-8">
+            <div>Minimum Exposure permitted: <b>{{ "%0.6f" | format(camera_minExposure | float) }}s</b></div>
+        </div>
     </div>
     <div class="form-group row">
         <div class="col-sm-2">
@@ -431,6 +451,17 @@ var camera_id = {{ camera_id }};
             <div id="PRESSURE_DISPLAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">Pressure units for display</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.WINDSPEED_DISPLAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.WINDSPEED_DISPLAY(class='form-select bg-secondary') }}
+            <div id="WINDSPEED_DISPLAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">Wind Speed units for display</div>
     </div>
 
     <div class="form-group row">
@@ -893,7 +924,7 @@ var camera_id = {{ camera_id }};
             <div id="CLAHE_GRIDSIZE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div><a href="https://docs.opencv.org/4.x/d5/daf/tutorial_py_histogram_equalization.html" target="_blank">OpenCV CLAHE Tutorial</a></div>
+            <div><a href="https://docs.opencv.org/4.x/d5/daf/tutorial_py_histogram_equalization.html" class="text-decoration-none link-info" target="_blank">OpenCV CLAHE Tutorial</a></div>
         </div>
     </div>
 
@@ -1047,6 +1078,8 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-8">Color Filter Array/Bayer Pattern</div>
     </div>
 
+    <hr>
+
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.SCNR_ALGORITHM.label(class='col-form-label') }}
@@ -1123,6 +1156,119 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-8">1.0 is disabled.  1.5 is a good starting point</div>
     </div>
 
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.GAMMA_CORRECTION.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.GAMMA_CORRECTION(class='form-control bg-secondary') }}
+            <div id="GAMMA_CORRECTION-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">1.0 is disabled.</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.USE_NIGHT_COLOR.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.USE_NIGHT_COLOR(class='form-check-input') }}
+                <div id="USE_NIGHT_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.SCNR_ALGORITHM_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-3">
+            {{ form_config.SCNR_ALGORITHM_DAY(class='form-select bg-secondary') }}
+            <div id="SCNR_ALGORITHM_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-7">
+            <div>SCNR algorithm to apply to reduce green bias in image</div>
+            <div>
+              <ul>
+                <li>Average Neutral</li>
+                <li>Maximum Neutral</li>
+              </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.WBR_FACTOR_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.WBR_FACTOR_DAY(class='form-control bg-secondary') }}
+            <div id="WBR_FACTOR_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">1.0 is disabled</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.WBG_FACTOR_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.WBG_FACTOR_DAY(class='form-control bg-secondary') }}
+            <div id="WBG_FACTOR_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.WBB_FACTOR_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.WBB_FACTOR_DAY(class='form-control bg-secondary') }}
+            <div id="WBB_FACTOR_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.AUTO_WB_DAY.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.AUTO_WB_DAY(class='form-check-input') }}
+                <div id="AUTO_WB_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Auto WB is applied after manual WB settings</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.SATURATION_FACTOR_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.SATURATION_FACTOR_DAY(class='form-control bg-secondary') }}
+            <div id="SATURATION_FACTOR_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">1.0 is disabled.  1.5 is a good starting point</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.GAMMA_CORRECTION_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.GAMMA_CORRECTION_DAY(class='form-control bg-secondary') }}
+            <div id="GAMMA_CORRECTION_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">1.0 is disabled.</div>
+    </div>
+
     <hr>
 
     <div class="form-group row">
@@ -1133,7 +1279,11 @@ var camera_id = {{ camera_id }};
             {{ form_config.IMAGE_FILE_TYPE(class='form-select bg-secondary') }}
             <div id="IMAGE_FILE_TYPE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">File type for timelapse images.  Restart gunicorn if you change this setting.<br><span class="badge rounded-pill bg-warning text-dark">Warning</span><b>Some browsers do *NOT* support TIFF files.</b></div>
+        <div class="col-sm-8">
+            <div>File type for timelapse images.  Restart gunicorn if you change this setting.</div>
+            <div><span class="badge rounded-pill bg-warning text-dark">Warning</span> PNGs will use 10x space compared to JPEGs.</div>
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> Some browsers do *NOT* support TIFF files.</div>
+        </div>
     </div>
 
     <div class="form-group row">
@@ -1163,10 +1313,10 @@ var camera_id = {{ camera_id }};
             {{ form_config.IMAGE_FILE_COMPRESSION__TIF.label(class='col-form-label') }}
         </div>
         <div class="col-sm-2">
-            {{ form_config.IMAGE_FILE_COMPRESSION__TIF(class='form-control bg-secondary') }}
+            {{ form_config.IMAGE_FILE_COMPRESSION__TIF(class='form-control bg-secondary bg-dark text-secondary') }}
             <div id="IMAGE_FILE_COMPRESSION__TIF-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">(read-only)</div>
+        <div class="col-sm-8"></div>
     </div>
 
     <div class="form-group row">
@@ -1183,6 +1333,8 @@ var camera_id = {{ camera_id }};
             <div><span class="badge rounded-pill bg-warning text-dark">Warning</span> If you change this setting, please re-run setup.sh to update the web server config</div>
         </div>
     </div>
+
+    <hr>
 
     <div class="form-group row">
         <div class="col-sm-2">
@@ -1206,10 +1358,27 @@ var camera_id = {{ camera_id }};
             <div id="IMAGE_ROTATE_ANGLE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Rotate by arbitrary angle (0 == disabled)</div>
-            <div>Combine with cropping and image circle mask to clean up image</div>
+            <div>Rotate by arbitrary angle (0 = disabled)</div>
         </div>
     </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_ROTATE_KEEP_SIZE.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.IMAGE_ROTATE_KEEP_SIZE(class='form-check-input') }}
+                <div id="IMAGE_ROTATE_KEEP_SIZE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">
+            <div>Rotating an image changes the dimensions, using this option will maintain the current size and cutoff anything outside the current bounds.</div>
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> Only works with rotation by angle</div>
+        </div>
+    </div>
+
+    <hr>
 
     <div class="form-group row">
         <div class="col-sm-2">
@@ -1302,6 +1471,226 @@ var camera_id = {{ camera_id }};
         </div>
         <div class="col-sm-8">Save images in grayscale during day time</div>
     </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__TOP.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__TOP(class='form-control bg-secondary') }}
+            <div id="IMAGE_BORDER__TOP-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Add additional boarder area to the image</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__LEFT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__LEFT(class='form-control bg-secondary') }}
+            <div id="IMAGE_BORDER__LEFT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__RIGHT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__RIGHT(class='form-control bg-secondary') }}
+            <div id="IMAGE_BORDER__RIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__BOTTOM.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__BOTTOM(class='form-control bg-secondary') }}
+            <div id="IMAGE_BORDER__BOTTOM-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_BORDER__COLOR(class='form-control bg-secondary') }}
+            <div id="IMAGE_BORDER__COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Border color in R,G,B</div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_EXPORT_RAW.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_EXPORT_RAW(class='form-select bg-secondary') }}
+            <div id="IMAGE_EXPORT_RAW-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">Enable saving raw (non-stacked) images</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_EXPORT_FOLDER.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.IMAGE_EXPORT_FOLDER(class='form-control bg-secondary') }}
+            <div id="IMAGE_EXPORT_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">Folder to save raw exported images</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_EXPORT_FLIP_V.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.IMAGE_EXPORT_FLIP_V(class='form-check-input') }}
+                <div id="IMAGE_EXPORT_FLIP_V-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_EXPORT_FLIP_H.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.IMAGE_EXPORT_FLIP_H(class='form-check-input') }}
+                <div id="IMAGE_EXPORT_FLIP_H-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_SAVE_FITS.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.IMAGE_SAVE_FITS(class='form-check-input') }}
+                <div id="IMAGE_SAVE_FITS-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Enable saving raw FITS (non-stacked) data</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.IMAGE_SAVE_FITS_PRE_DARK.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.IMAGE_SAVE_FITS_PRE_DARK(class='form-check-input') }}
+                <div id="IMAGE_SAVE_FITS_PRE_DARK-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Save FITS files before subtracting dark calibration</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__0__KEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__0__KEY(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__0__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.FITSHEADERS__0__VAL(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__0__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-2"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__1__KEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__1__KEY(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__1__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.FITSHEADERS__1__VAL(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__1__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-2"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__2__KEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__2__KEY(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__2__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.FITSHEADERS__2__VAL(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__2__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-2"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__3__KEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__3__KEY(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__3__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.FITSHEADERS__3__VAL(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__3__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-2"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__4__KEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.FITSHEADERS__4__KEY(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__4__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.FITSHEADERS__4__VAL(class='form-control bg-secondary') }}
+            <div id="FITSHEADERS__4__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-2"></div>
+    </div>
+
+</div><!-- end image tab -->
+<div class="tab-pane fade" id="nav-overlays" role="tabpanel" aria-labelledby="nav-overlays-tab">
 
     <hr>
 
@@ -1518,6 +1907,34 @@ var camera_id = {{ camera_id }};
 
     <div class="form-group row">
         <div class="col-sm-2">
+            {{ form_config.MOON_OVERLAY__FLIP_V.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.MOON_OVERLAY__FLIP_V(class='form-check-input') }}
+                <div id="MOON_OVERLAY__FLIP_V-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">
+            <div>Flipping Vertically and Horizontal should show view from Southern Hemisphere</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.MOON_OVERLAY__FLIP_H.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.MOON_OVERLAY__FLIP_H(class='form-check-input') }}
+                <div id="MOON_OVERLAY__FLIP_H-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
             {{ form_config.MOON_OVERLAY__SCALE.label(class='col-form-label') }}
         </div>
         <div class="col-sm-2">
@@ -1527,6 +1944,246 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-8">
             <div>Original Moon image is 400x400</div>
         </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.MOON_OVERLAY__DARK_SIDE_SCALE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.MOON_OVERLAY__DARK_SIDE_SCALE(class='form-control bg-secondary') }}
+            <div id="MOON_OVERLAY__DARK_SIDE_SCALE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Default: 0.4 - 0.0 would make the shaded area completely black</div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__ENABLE.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.LIGHTGRAPH_OVERLAY__ENABLE(class='form-check-input') }}
+                <div id="LIGHTGRAPH_OVERLAY__ENABLE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__GRAPH_BORDER.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__GRAPH_BORDER(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__GRAPH_BORDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__Y.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__Y(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__Y-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Negative is offset from the bottom of image</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OFFSET_X.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OFFSET_X(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__OFFSET_X-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Offset from center</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__SCALE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__SCALE(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__SCALE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Default size: 1446 x 86 (including borders)</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__DAY_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__DAY_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__DAY_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Color in R,G,B</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__DUSK_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__DUSK_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__DUSK_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NIGHT_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NIGHT_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__NIGHT_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__HOUR_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__HOUR_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__HOUR_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__BORDER_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__BORDER_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__BORDER_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NOW_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__NOW_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__NOW_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__FONT_COLOR.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__FONT_COLOR(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__FONT_COLOR-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OPACITY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OPACITY(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__OPACITY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE(class='form-control bg-secondary') }}
+            <div id="LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__LABEL.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.LIGHTGRAPH_OVERLAY__LABEL(class='form-check-input') }}
+                <div id="LIGHTGRAPH_OVERLAY__LABEL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LIGHTGRAPH_OVERLAY__HOUR_LINES.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.LIGHTGRAPH_OVERLAY__HOUR_LINES(class='form-check-input') }}
+                <div id="LIGHTGRAPH_OVERLAY__HOUR_LINES-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
     </div>
 
     <hr>
@@ -1815,160 +2472,8 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-8">Color of Moon Orb</div>
     </div>
 
-    <hr>
 
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_EXPORT_RAW.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_EXPORT_RAW(class='form-select bg-secondary') }}
-            <div id="IMAGE_EXPORT_RAW-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-8">Enable saving raw (non-stacked) images</div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_EXPORT_FOLDER.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-5">
-            {{ form_config.IMAGE_EXPORT_FOLDER(class='form-control bg-secondary') }}
-            <div id="IMAGE_EXPORT_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-5">Folder to save raw exported images</div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_EXPORT_FLIP_V.label }}
-        </div>
-        <div class="col-sm-2">
-            <div class="form-switch">
-                {{ form_config.IMAGE_EXPORT_FLIP_V(class='form-check-input') }}
-                <div id="IMAGE_EXPORT_FLIP_V-error" class="invalid-feedback text-danger" style="display: none;"></div>
-            </div>
-        </div>
-        <div class="col-sm-8"></div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_EXPORT_FLIP_H.label }}
-        </div>
-        <div class="col-sm-2">
-            <div class="form-switch">
-                {{ form_config.IMAGE_EXPORT_FLIP_H(class='form-check-input') }}
-                <div id="IMAGE_EXPORT_FLIP_H-error" class="invalid-feedback text-danger" style="display: none;"></div>
-            </div>
-        </div>
-        <div class="col-sm-8"></div>
-    </div>
-
-    <hr>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_SAVE_FITS.label }}
-        </div>
-        <div class="col-sm-2">
-            <div class="form-switch">
-                {{ form_config.IMAGE_SAVE_FITS(class='form-check-input') }}
-                <div id="IMAGE_SAVE_FITS-error" class="invalid-feedback text-danger" style="display: none;"></div>
-            </div>
-        </div>
-        <div class="col-sm-8">Enable saving raw FITS (non-stacked) data</div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.IMAGE_SAVE_FITS_PRE_DARK.label }}
-        </div>
-        <div class="col-sm-2">
-            <div class="form-switch">
-                {{ form_config.IMAGE_SAVE_FITS_PRE_DARK(class='form-check-input') }}
-                <div id="IMAGE_SAVE_FITS_PRE_DARK-error" class="invalid-feedback text-danger" style="display: none;"></div>
-            </div>
-        </div>
-        <div class="col-sm-8">Save FITS files before subtracting dark calibration</div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__0__KEY.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__0__KEY(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__0__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-4">
-            {{ form_config.FITSHEADERS__0__VAL(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__0__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-2"></div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__1__KEY.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__1__KEY(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__1__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-4">
-            {{ form_config.FITSHEADERS__1__VAL(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__1__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-2"></div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__2__KEY.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__2__KEY(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__2__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-4">
-            {{ form_config.FITSHEADERS__2__VAL(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__2__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-2"></div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__3__KEY.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__3__KEY(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__3__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-4">
-            {{ form_config.FITSHEADERS__3__VAL(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__3__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-2"></div>
-    </div>
-
-    <div class="form-group row">
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__4__KEY.label(class='col-form-label') }}
-        </div>
-        <div class="col-sm-2">
-            {{ form_config.FITSHEADERS__4__KEY(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__4__KEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-4">
-            {{ form_config.FITSHEADERS__4__VAL(class='form-control bg-secondary') }}
-            <div id="FITSHEADERS__4__VAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
-        </div>
-        <div class="col-sm-2"></div>
-    </div>
-
-</div><!-- end image tab -->
+</div><!-- end overlays tab -->
 <div class="tab-pane fade" id="nav-timelapse" role="tabpanel" aria-labelledby="nav-timelapse-tab">
 
     <hr>
@@ -2047,22 +2552,24 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FFMPEG_VFSCALE.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-2">
+        <div class="col-sm-4">
             {{ form_config.FFMPEG_VFSCALE(class='form-select bg-secondary') }}
             <div id="FFMPEG_VFSCALE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">ffmpeg scaling</div>
+        <div class="col-sm-6">
+            <div><span class="badge rounded-pill bg-danger text-dark">Warning</span> Higher resolution videos may cause timelapses to fail on systems with less than 4GB RAM.  Scale your resolution to reduce the memory requirements.</div>
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FFMPEG_CODEC.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-2">
+        <div class="col-sm-4">
             {{ form_config.FFMPEG_CODEC(class='form-select bg-secondary') }}
             <div id="FFMPEG_CODEC-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">ffmpeg output codec</div>
+        <div class="col-sm-6">ffmpeg output codec</div>
     </div>
 
     <div class="form-group row">
@@ -2094,6 +2601,24 @@ var camera_id = {{ camera_id }};
 
     <div class="form-group row">
         <div class="col-sm-2">
+            {{ form_config.TIMELAPSE__FFMPEG_REPORT.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.TIMELAPSE__FFMPEG_REPORT(class='form-check-input') }}
+                <div id="TIMELAPSE__FFMPEG_REPORT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">
+            <div>Generate ffmpeg reports in /tmp (debugging)</div>
+            <div><span class="badge rounded-pill bg-warning text-dark">Warning</span> Report files are not automatically deleted</div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
             {{ form_config.TIMELAPSE__IMAGE_CIRCLE.label(class='col-form-label') }}
         </div>
         <div class="col-sm-2">
@@ -2103,6 +2628,19 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-8">
             <div>Size of image circle for wrapping the keogram</div>
             <div>Offsets for the image circle are on the Location tab</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TIMELAPSE__PRE_SCALE.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.TIMELAPSE__PRE_SCALE(class='form-control bg-secondary') }}
+            <div id="TIMELAPSE__PRE_SCALE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Percentage to pre-scale image.  Only valid in timelapse processors that modify the image.</div>
         </div>
     </div>
 
@@ -2450,7 +2988,7 @@ var camera_id = {{ camera_id }};
             <div id="KEOGRAM_ANGLE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div><a href="https://github.com/aaronwmorris/indi-allsky/wiki/Keogram-Rotation" class="text-decoration-none link-info" target="_blank">Keogram Wiki</a></div>
+            <div><a href="https://github.com/aaronwmorris/indi-allsky/wiki/Keogram" class="text-decoration-none link-info" target="_blank">Keogram Wiki</a></div>
             <div>Min: -180, Max: 180 - Image rotation for Keogram data</div>
         </div>
     </div>
@@ -2510,6 +3048,74 @@ var camera_id = {{ camera_id }};
             </div>
         </div>
         <div class="col-sm-8">Add keogram time labels</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LONGTERM_KEOGRAM__ENABLE.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.LONGTERM_KEOGRAM__ENABLE(class='form-check-input') }}
+                <div id="LONGTERM_KEOGRAM__ENABLE-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Gather long term keogram data</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LONGTERM_KEOGRAM__OFFSET_X.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LONGTERM_KEOGRAM__OFFSET_X(class='form-control bg-secondary') }}
+            <div id="LONGTERM_KEOGRAM__OFFSET_X-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Allows you to offset pixels for keogram if they are obstructed</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.LONGTERM_KEOGRAM__OFFSET_Y.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.LONGTERM_KEOGRAM__OFFSET_Y(class='form-control bg-secondary') }}
+            <div id="LONGTERM_KEOGRAM__OFFSET_Y-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.REALTIME_KEOGRAM__MAX_ENTRIES.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.REALTIME_KEOGRAM__MAX_ENTRIES(class='form-control bg-secondary') }}
+            <div id="REALTIME_KEOGRAM__MAX_ENTRIES-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>History of images/vertical pixels to retain in the realtime keogram</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.REALTIME_KEOGRAM__SAVE_INTERVAL.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-2">
+            {{ form_config.REALTIME_KEOGRAM__SAVE_INTERVAL(class='form-control bg-secondary') }}
+            <div id="REALTIME_KEOGRAM__SAVE_INTERVAL-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-8">
+            <div>Store realtime keogram every X image</div>
+        </div>
     </div>
 
     <hr>
@@ -2826,7 +3432,7 @@ var camera_id = {{ camera_id }};
             </div>
         </div>
         <div class="col-sm-8">
-            <div>Enable using GPS location services.  Requires GPS hardware and <a href="https://github.com/aaronwmorris/indi-allsky/wiki/GPSd-NTP-Time-Sync">GPSd installation</a></div>
+            <div>Enable using GPS location services.  Requires GPS hardware and <a href="https://github.com/aaronwmorris/indi-allsky/wiki/GPSd-NTP-Time-Sync" class="text-decoration-none link-info" target="_blank">GPSd installation</a></div>
         </div>
     </div>
 
@@ -2874,7 +3480,9 @@ var camera_id = {{ camera_id }};
             {{ form_config.LOCATION_LATITUDE(class='form-control bg-secondary') }}
             <div id="LOCATION_LATITUDE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Min: -90, Max: 90 [Positive = Northern Hemisphere / Negative = Southern Hemisphere]</div>
+        <div class="col-sm-8">
+            <div>Min: -90, Max: 90 [Positive = Northern Hemisphere / Negative = Southern Hemisphere]</div>
+        </div>
     </div>
 
     <div class="form-group row">
@@ -2885,7 +3493,10 @@ var camera_id = {{ camera_id }};
             {{ form_config.LOCATION_LONGITUDE(class='form-control bg-secondary') }}
             <div id="LOCATION_LONGITUDE-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-8">Min: -180, Max: 180 [Positive = Eastern Hemisphere / Negative = Western Hemisphere]</div>
+        <div class="col-sm-8">
+            <div>{{ longitude_validation_message | safe }}</div>
+            <div>Min: -180, Max: 180 [Positive = Eastern Hemisphere / Negative = Western Hemisphere]</div>
+        </div>
     </div>
 
     <div class="form-group row">
@@ -3179,6 +3790,7 @@ var camera_id = {{ camera_id }};
             <div id="CHARTS__CUSTOM_SLOT_2-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-6">
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> Changing these settings will require a restart/reload</div>
         </div>
     </div>
 
@@ -3206,6 +3818,66 @@ var camera_id = {{ camera_id }};
         </div>
     </div>
 
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.CHARTS__CUSTOM_SLOT_5.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.CHARTS__CUSTOM_SLOT_5(class='form-select bg-secondary') }}
+            <div id="CHARTS__CUSTOM_SLOT_5-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.CHARTS__CUSTOM_SLOT_6.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.CHARTS__CUSTOM_SLOT_6(class='form-select bg-secondary') }}
+            <div id="CHARTS__CUSTOM_SLOT_6-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.CHARTS__CUSTOM_SLOT_7.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.CHARTS__CUSTOM_SLOT_7(class='form-select bg-secondary') }}
+            <div id="CHARTS__CUSTOM_SLOT_7-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.CHARTS__CUSTOM_SLOT_8.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.CHARTS__CUSTOM_SLOT_8(class='form-select bg-secondary') }}
+            <div id="CHARTS__CUSTOM_SLOT_8-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.CHARTS__CUSTOM_SLOT_9.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.CHARTS__CUSTOM_SLOT_9(class='form-select bg-secondary') }}
+            <div id="CHARTS__CUSTOM_SLOT_9-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+        </div>
+    </div>
+
     <hr>
 
     <div class="form-group row">
@@ -3219,7 +3891,7 @@ var camera_id = {{ camera_id }};
             </div>
         </div>
         <div class="col-sm-8">
-            <div><span class="badge rounded-pill bg-info text-dark">Note</span> Changing these settings will require a restart</div>
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> Changing these settings will require a restart/reload</div>
             <div class="col-sm-8">Enable serving images/videos exclusively from non-local sources (S3, etc)</div>
         </div>
     </div>
@@ -3272,7 +3944,7 @@ var camera_id = {{ camera_id }};
             {{ form_config.ADMIN_NETWORKS_FLASK.label(class='col-form-label') }}
         </div>
         <div class="col-sm-4">
-            {{ form_config.ADMIN_NETWORKS_FLASK(class='form-control text-muted bg-dark', rows='10') }}
+            {{ form_config.ADMIN_NETWORKS_FLASK(class='form-control text-secondary bg-dark', rows='10') }}
             <div id="ADMIN_NETWORKS_FLASK-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-6">
@@ -3436,6 +4108,23 @@ var camera_id = {{ camera_id }};
 
     <div class="form-group row">
         <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__ATOMIC_TRANSFERS.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.FILETRANSFER__ATOMIC_TRANSFERS(class='form-check-input') }}
+                <div id="FILETRANSFER__ATOMIC_TRANSFERS-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">
+            <div>Transfer files to a temporary name before renaming to the final name</div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
             {{ form_config.FILETRANSFER__FORCE_IPV4.label }}
         </div>
         <div class="col-sm-2">
@@ -3483,13 +4172,13 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_IMAGE_NAME.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-3">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_IMAGE_NAME(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_IMAGE_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-7">
+        <div class="col-sm-5">
             <div>Remote image name. "{0}" is replaced with the configured image type extension.</div>
-            <div>Available variables: <pre>timestamp, ts, ext</pre></div>
+            <div>Available variables: <pre>timestamp, ts, ext, camera_uuid, camera_id, timeofday, tod</pre></div>
             <div><a href="https://docs.python.org/3/library/string.html#formatspec" class="text-decoration-none link-info" target="_blank">Python format syntax</a></div>
             <div><a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes" class="text-decoration-none link-info" target="_blank">Python datetime format codes</a></div>
         </div>
@@ -3499,13 +4188,13 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_IMAGE_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_IMAGE_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_IMAGE_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">
+        <div class="col-sm-5">
             <div>Remote folder to store images</div>
-            <div>Available variables: <pre>timestamp, ts, camera_uuid, day_date</pre></div>
+            <div>Available variables: <pre>timestamp, ts, day_date, camera_uuid, camera_id, timeofday, tod</pre></div>
         </div>
     </div>
 
@@ -3515,11 +4204,11 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_NAME.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-3">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_NAME(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_PANORAMA_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-7">
+        <div class="col-sm-5">
         </div>
     </div>
 
@@ -3527,13 +4216,11 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_PANORAMA_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">
-            <div>Remote folder to store images</div>
-            <div>Available variables: <pre>timestamp, ts, camera_uuid, day_date</pre></div>
+        <div class="col-sm-5">
         </div>
     </div>
 
@@ -3543,115 +4230,225 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_METADATA_NAME.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-3">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_METADATA_NAME(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_METADATA_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-7">Remote metadata file name.</div>
+        <div class="col-sm-5">Remote metadata file name.</div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_METADATA_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_METADATA_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_METADATA_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store metadata</div>
+        <div class="col-sm-5">Remote folder to store metadata</div>
     </div>
 
     <hr>
 
     <div class="form-group row">
         <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_RAW_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_RAW_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_RAW_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_RAW_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_RAW_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_RAW_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store RAW images</div>
+        <div class="col-sm-5">Remote folder to store RAW images</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_FITS_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_FITS_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_FITS_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_FITS_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_FITS_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_FITS_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store FITS images</div>
+        <div class="col-sm-5">Remote folder to store FITS images</div>
     </div>
 
     <hr>
 
     <div class="form-group row">
         <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_VIDEO_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_VIDEO_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_VIDEO_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_VIDEO_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_VIDEO_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_VIDEO_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store timelapse videos</div>
+        <div class="col-sm-5">Remote folder to store timelapse videos</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_MINI_VIDEO_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_MINI_VIDEO_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_MINI_VIDEO_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store mini timelapse videos</div>
+        <div class="col-sm-5">Remote folder to store mini timelapse videos</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_KEOGRAM_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_KEOGRAM_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_KEOGRAM_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_KEOGRAM_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_KEOGRAM_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_KEOGRAM_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store keograms</div>
+        <div class="col-sm-5">Remote folder to store keograms</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_STARTRAIL_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_STARTRAIL_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store star trails</div>
+        <div class="col-sm-5">Remote folder to store star trails</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store star trail videos</div>
+        <div class="col-sm-5">Remote folder to store star trail videos</div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-5">
+            {{ form_config.FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME(class='form-control bg-secondary') }}
+            <div id="FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-5">
+        </div>
     </div>
 
     <div class="form-group row">
         <div class="col-sm-2">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER.label(class='col-form-label') }}
         </div>
-        <div class="col-sm-4">
+        <div class="col-sm-5">
             {{ form_config.FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER(class='form-control bg-secondary') }}
             <div id="FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
-        <div class="col-sm-6">Remote folder to store panorama videos</div>
+        <div class="col-sm-5">Remote folder to store panorama videos</div>
     </div>
+
+    <hr>
 
     <div class="form-group row">
         <div class="col-sm-2">
@@ -4028,7 +4825,7 @@ var camera_id = {{ camera_id }};
             {{ form_config.YOUTUBE__REDIRECT_URI.label(class='col-form-label') }}
         </div>
         <div class="col-sm-5">
-            {{ form_config.YOUTUBE__REDIRECT_URI(class='form-control text-muted bg-dark') }}
+            {{ form_config.YOUTUBE__REDIRECT_URI(class='form-control text-secondary bg-dark') }}
             <div id="YOUTUBE__REDIRECT_URI-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-5">The domain must be a real TLD (.com / .net / etc)</div>
@@ -4682,7 +5479,7 @@ var camera_id = {{ camera_id }};
             <div id="TEMP_SENSOR__A_I2C_ADDRESS-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Hexidecimal address - Example: 0x77</div>
+            <div>Hexadecimal address - Example: 0x77</div>
         </div>
     </div>
 
@@ -4749,7 +5546,7 @@ var camera_id = {{ camera_id }};
             <div id="TEMP_SENSOR__B_I2C_ADDRESS-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Hexidecimal address - Example: 0x76</div>
+            <div>Hexadecimal address - Example: 0x76</div>
         </div>
     </div>
 
@@ -4816,7 +5613,7 @@ var camera_id = {{ camera_id }};
             <div id="TEMP_SENSOR__C_I2C_ADDRESS-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>Hexidecimal address - Example: 0x40</div>
+            <div>Hexadecimal address - Example: 0x40</div>
         </div>
     </div>
 
@@ -4854,6 +5651,243 @@ var camera_id = {{ camera_id }};
         <div class="col-sm-4">
             {{ form_config.TEMP_SENSOR__WUNDERGROUND_APIKEY(class='form-control bg-secondary') }}
             <div id="TEMP_SENSOR__WUNDERGROUND_APIKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__ASTROSPHERIC_APIKEY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__ASTROSPHERIC_APIKEY(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__ASTROSPHERIC_APIKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_APIKEY.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_APIKEY(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__AMBIENTWEATHER_APIKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__ECOWITT_APIKEY.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__ECOWITT_APIKEY(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__ECOWITT_APIKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__ECOWITT_APPLICATIONKEY.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__ECOWITT_APPLICATIONKEY(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__ECOWITT_APPLICATIONKEY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__ECOWITT_MACADDRESS.label(class='col-form-label') }}
+
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__ECOWITT_MACADDRESS(class='form-control bg-secondary') }}
+            <div id="TEMP_SENSOR__ECOWITT_MACADDRESS-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SHT3X_HEATER_NIGHT.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.TEMP_SENSOR__SHT3X_HEATER_NIGHT(class='form-check-input') }}
+                <div id="TEMP_SENSOR__SHT3X_HEATER_NIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Only enabled when RH >80%</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SHT3X_HEATER_DAY.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.TEMP_SENSOR__SHT3X_HEATER_DAY(class='form-check-input') }}
+                <div id="TEMP_SENSOR__SHT3X_HEATER_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SHT4X_MODE_NIGHT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__SHT4X_MODE_NIGHT(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__SHT4X_MODE_NIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SHT4X_MODE_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__SHT4X_MODE_DAY(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__SHT4X_MODE_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__HTU31D_HEATER_NIGHT.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.TEMP_SENSOR__HTU31D_HEATER_NIGHT(class='form-check-input') }}
+                <div id="TEMP_SENSOR__HTU31D_HEATER_NIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8">Only enabled when RH >80%</div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__HTU31D_HEATER_DAY.label }}
+        </div>
+        <div class="col-sm-2">
+            <div class="form-switch">
+                {{ form_config.TEMP_SENSOR__HTU31D_HEATER_DAY(class='form-check-input') }}
+                <div id="TEMP_SENSOR__HTU31D_HEATER_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="col-sm-8"></div>
+    </div>
+
+    <hr>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__HDC302X_HEATER_NIGHT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__HDC302X_HEATER_NIGHT(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__HDC302X_HEATER_NIGHT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div></div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.TEMP_SENSOR__HDC302X_HEATER_DAY.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.TEMP_SENSOR__HDC302X_HEATER_DAY(class='form-select bg-secondary') }}
+            <div id="TEMP_SENSOR__HDC302X_HEATER_DAY-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-6">
             <div></div>
@@ -5197,7 +6231,7 @@ var camera_id = {{ camera_id }};
 
     <hr>
 
-    <div><span class="badge rounded-pill bg-info text-dark">Note</span> Sensor units may be in either Celcius or Fahrenheit based on the Temperature Display option on the Camera Tab</div>
+    <div><span class="badge rounded-pill bg-info text-dark">Note</span> Sensor units may be in either Celsius or Fahrenheit based on the Temperature Display option on the Camera Tab</div>
 
     <hr>
 
@@ -5293,6 +6327,7 @@ var camera_id = {{ camera_id }};
         </div>
         <div class="col-sm-8">
             <div>Default duty cycle of PWM</div>
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> If you enable dew heater thresholds, this should be set to 0</div>
         </div>
     </div>
 
@@ -5335,7 +6370,23 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__TEMP_USER_VAR_SLOT-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-6">
+            <div>Last measurement: <b>{{ dh_temp_str }}</b></div>
             <div>This should be the slot containing the current temperature to be compared against the dew point (or manual target)</div>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-sm-2">
+            {{ form_config.DEW_HEATER__DEWPOINT_USER_VAR_SLOT.label(class='col-form-label') }}
+        </div>
+        <div class="col-sm-4">
+            {{ form_config.DEW_HEATER__DEWPOINT_USER_VAR_SLOT(class='form-select bg-secondary') }}
+            <div id="DEW_HEATER__DEWPOINT_USER_VAR_SLOT-error" class="invalid-feedback text-danger" style="display: none;"></div>
+        </div>
+        <div class="col-sm-6">
+            <div>Last measurement: <b>{{ dh_dewpoint_str }}</b></div>
+            <div>Last delta: <b>{{ dh_temp_delta_str }}</b></div>
+            <div>Expected status: <b>{{ dh_status_str }}</b></div>
         </div>
     </div>
 
@@ -5361,7 +6412,6 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__LEVEL_LOW-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
         </div>
     </div>
 
@@ -5374,7 +6424,6 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__LEVEL_MED-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
         </div>
     </div>
 
@@ -5387,7 +6436,6 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__LEVEL_HIGH-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
         </div>
     </div>
 
@@ -5400,7 +6448,8 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__THOLD_DIFF_LOW-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>If the difference is above the LOW threshold, the default level is used</div>
+            <div>If the delta is above the LOW threshold, the default level is used</div>
+            <div><b>Threshold: {{ dh_target_low_str }}</b></div>
         </div>
     </div>
 
@@ -5413,7 +6462,7 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__THOLD_DIFF_MED-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
+            <div><b>Threshold: {{ dh_target_med_str }}</b></div>
         </div>
     </div>
 
@@ -5426,7 +6475,7 @@ var camera_id = {{ camera_id }};
             <div id="DEW_HEATER__THOLD_DIFF_HIGH-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
+            <div><b>Threshold: {{ dh_target_high_str }}</b></div>
         </div>
     </div>
 
@@ -5482,6 +6531,7 @@ var camera_id = {{ camera_id }};
         </div>
         <div class="col-sm-8">
             <div>Default duty cycle of PWM</div>
+            <div><span class="badge rounded-pill bg-info text-dark">Note</span> If you enable fan thresholds, this should be set to 0</div>
         </div>
     </div>
 
@@ -5524,6 +6574,7 @@ var camera_id = {{ camera_id }};
             <div id="FAN__TEMP_USER_VAR_SLOT-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-6">
+            <div>Last measurement: <b>{{ fan_temp_str }}</b></div>
             <div>This should be the slot containing the current temperature to be compared with the target temperature</div>
         </div>
     </div>
@@ -5538,6 +6589,8 @@ var camera_id = {{ camera_id }};
         </div>
         <div class="col-sm-8">
             <div>Target temperature</div>
+            <div>Last delta: <b>{{ fan_temp_delta_str }}</b></div>
+            <div>Expected status: <b>{{ fan_status_str }}</b></div>
         </div>
     </div>
 
@@ -5589,7 +6642,8 @@ var camera_id = {{ camera_id }};
             <div id="FAN__THOLD_DIFF_LOW-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div>If the difference is below the LOW threshold, the default level is used</div>
+            <div>If the delta is below the LOW threshold, the default level is used</div>
+            <div><b>Threshold: {{ fan_target_low_str }}</b></div>
         </div>
     </div>
 
@@ -5602,7 +6656,7 @@ var camera_id = {{ camera_id }};
             <div id="FAN__THOLD_DIFF_MED-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
+            <div><b>Threshold: {{ fan_target_med_str }}</b></div>
         </div>
     </div>
 
@@ -5615,7 +6669,7 @@ var camera_id = {{ camera_id }};
             <div id="FAN__THOLD_DIFF_HIGH-error" class="invalid-feedback text-danger" style="display: none;"></div>
         </div>
         <div class="col-sm-8">
-            <div></div>
+            <div><b>Threshold: {{ fan_target_high_str }}</b></div>
         </div>
     </div>
 
@@ -5960,6 +7014,7 @@ var camera_id = {{ camera_id }};
             <div class="loader" id="loader_config"></div>
             <div id="success-message" class="text-success" style="display: none;"></div>
             <div id="failure-message" class="invalid-feedback text-danger" style="display: none;"></div>
+            <div id="failure-fields" class="invalid-feedback text-warning" style="display: none;"></div>
         </div>
     </div>
 
@@ -6001,12 +7056,20 @@ const field_names = [
     'WBR_FACTOR',
     'WBG_FACTOR',
     'WBB_FACTOR',
+    'WBR_FACTOR_DAY',
+    'WBG_FACTOR_DAY',
+    'WBB_FACTOR_DAY',
     'SATURATION_FACTOR',
+    'SATURATION_FACTOR_DAY',
+    'GAMMA_CORRECTION',
+    'GAMMA_CORRECTION_DAY',
     'CFA_PATTERN',
     'SCNR_ALGORITHM',
+    'SCNR_ALGORITHM_DAY',
     'CCD_TEMP',
     'TEMP_DISPLAY',
     'PRESSURE_DISPLAY',
+    'WINDSPEED_DISPLAY',
     'CCD_TEMP_SCRIPT',
     'TARGET_ADU',
     'TARGET_ADU_DAY',
@@ -6040,6 +7103,11 @@ const field_names = [
     'CHARTS__CUSTOM_SLOT_2',
     'CHARTS__CUSTOM_SLOT_3',
     'CHARTS__CUSTOM_SLOT_4',
+    'CHARTS__CUSTOM_SLOT_5',
+    'CHARTS__CUSTOM_SLOT_6',
+    'CHARTS__CUSTOM_SLOT_7',
+    'CHARTS__CUSTOM_SLOT_8',
+    'CHARTS__CUSTOM_SLOT_9',
     'CLAHE_CLIPLIMIT',
     'CLAHE_GRIDSIZE',
     'IMAGE_STRETCH__CLASSNAME',
@@ -6053,6 +7121,10 @@ const field_names = [
     'KEOGRAM_V_SCALE',
     'KEOGRAM_CROP_TOP',
     'KEOGRAM_CROP_BOTTOM',
+    'LONGTERM_KEOGRAM__OFFSET_X',
+    'LONGTERM_KEOGRAM__OFFSET_Y',
+    'REALTIME_KEOGRAM__MAX_ENTRIES',
+    'REALTIME_KEOGRAM__SAVE_INTERVAL',
     'STARTRAILS_MAX_ADU',
     'STARTRAILS_MASK_THOLD',
     'STARTRAILS_PIXEL_THOLD',
@@ -6083,6 +7155,23 @@ const field_names = [
     'MOON_OVERLAY__X',
     'MOON_OVERLAY__Y',
     'MOON_OVERLAY__SCALE',
+    'MOON_OVERLAY__DARK_SIDE_SCALE',
+    'LIGHTGRAPH_OVERLAY__GRAPH_HEIGHT',
+    'LIGHTGRAPH_OVERLAY__GRAPH_BORDER',
+    'LIGHTGRAPH_OVERLAY__NOW_MARKER_SIZE',
+    'LIGHTGRAPH_OVERLAY__Y',
+    'LIGHTGRAPH_OVERLAY__OFFSET_X',
+    'LIGHTGRAPH_OVERLAY__SCALE',
+    'LIGHTGRAPH_OVERLAY__DAY_COLOR',
+    'LIGHTGRAPH_OVERLAY__DUSK_COLOR',
+    'LIGHTGRAPH_OVERLAY__NIGHT_COLOR',
+    'LIGHTGRAPH_OVERLAY__HOUR_COLOR',
+    'LIGHTGRAPH_OVERLAY__BORDER_COLOR',
+    'LIGHTGRAPH_OVERLAY__NOW_COLOR',
+    'LIGHTGRAPH_OVERLAY__FONT_COLOR',
+    'LIGHTGRAPH_OVERLAY__OPACITY',
+    'LIGHTGRAPH_OVERLAY__PIL_FONT_SIZE',
+    'LIGHTGRAPH_OVERLAY__OPENCV_FONT_SCALE',
     'FISH2PANO__DIAMETER',
     'FISH2PANO__OFFSET_X',
     'FISH2PANO__OFFSET_Y',
@@ -6115,6 +7204,7 @@ const field_names = [
     'TIMELAPSE__PRE_PROCESSOR',
     'TIMELAPSE__IMAGE_CIRCLE',
     'TIMELAPSE__KEOGRAM_RATIO',
+    'TIMELAPSE__PRE_SCALE',
     'IMAGE_LABEL_SYSTEM',
     'TEXT_PROPERTIES__FONT_FACE',
     'TEXT_PROPERTIES__FONT_HEIGHT',
@@ -6145,6 +7235,11 @@ const field_names = [
     'ORB_PROPERTIES__SUN_COLOR',
     'ORB_PROPERTIES__MOON_COLOR',
     'ORB_PROPERTIES__AZ_OFFSET',
+    'IMAGE_BORDER__TOP',
+    'IMAGE_BORDER__LEFT',
+    'IMAGE_BORDER__RIGHT',
+    'IMAGE_BORDER__BOTTOM',
+    'IMAGE_BORDER__COLOR',
     'UPLOAD_WORKERS',
     'FILETRANSFER__CLASSNAME',
     'FILETRANSFER__HOST',
@@ -6156,18 +7251,26 @@ const field_names = [
     'FILETRANSFER__CONNECT_TIMEOUT',
     'FILETRANSFER__TIMEOUT',
     'FILETRANSFER__REMOTE_IMAGE_NAME',
-    'FILETRANSFER__REMOTE_PANORAMA_NAME',
     'FILETRANSFER__REMOTE_IMAGE_FOLDER',
+    'FILETRANSFER__REMOTE_PANORAMA_NAME',
     'FILETRANSFER__REMOTE_PANORAMA_FOLDER',
+    'FILETRANSFER__REMOTE_PANORAMA_VIDEO_NAME',
     'FILETRANSFER__REMOTE_PANORAMA_VIDEO_FOLDER',
     'FILETRANSFER__REMOTE_METADATA_NAME',
     'FILETRANSFER__REMOTE_METADATA_FOLDER',
+    'FILETRANSFER__REMOTE_RAW_NAME',
     'FILETRANSFER__REMOTE_RAW_FOLDER',
+    'FILETRANSFER__REMOTE_FITS_NAME',
     'FILETRANSFER__REMOTE_FITS_FOLDER',
+    'FILETRANSFER__REMOTE_VIDEO_NAME',
     'FILETRANSFER__REMOTE_VIDEO_FOLDER',
+    'FILETRANSFER__REMOTE_MINI_VIDEO_NAME',
     'FILETRANSFER__REMOTE_MINI_VIDEO_FOLDER',
+    'FILETRANSFER__REMOTE_KEOGRAM_NAME',
     'FILETRANSFER__REMOTE_KEOGRAM_FOLDER',
+    'FILETRANSFER__REMOTE_STARTRAIL_NAME',
     'FILETRANSFER__REMOTE_STARTRAIL_FOLDER',
+    'FILETRANSFER__REMOTE_STARTRAIL_VIDEO_NAME',
     'FILETRANSFER__REMOTE_STARTRAIL_VIDEO_FOLDER',
     'FILETRANSFER__REMOTE_ENDOFNIGHT_FOLDER',
     'FILETRANSFER__UPLOAD_IMAGE',
@@ -6241,6 +7344,7 @@ const field_names = [
     'DEW_HEATER__LEVEL_DEF',
     'DEW_HEATER__MANUAL_TARGET',
     'DEW_HEATER__TEMP_USER_VAR_SLOT',
+    'DEW_HEATER__DEWPOINT_USER_VAR_SLOT',
     'DEW_HEATER__LEVEL_LOW',
     'DEW_HEATER__LEVEL_MED',
     'DEW_HEATER__LEVEL_HIGH',
@@ -6277,11 +7381,24 @@ const field_names = [
     'TEMP_SENSOR__C_I2C_ADDRESS',
     'TEMP_SENSOR__OPENWEATHERMAP_APIKEY',
     'TEMP_SENSOR__WUNDERGROUND_APIKEY',
+    'TEMP_SENSOR__ASTROSPHERIC_APIKEY',
+    'TEMP_SENSOR__AMBIENTWEATHER_APIKEY',
+    'TEMP_SENSOR__AMBIENTWEATHER_APPLICATIONKEY',
+    'TEMP_SENSOR__AMBIENTWEATHER_MACADDRESS',
+    'TEMP_SENSOR__ECOWITT_APIKEY',
+    'TEMP_SENSOR__ECOWITT_APPLICATIONKEY',
+    'TEMP_SENSOR__ECOWITT_MACADDRESS',
     'TEMP_SENSOR__MQTT_TRANSPORT',
     'TEMP_SENSOR__MQTT_HOST',
     'TEMP_SENSOR__MQTT_PORT',
     'TEMP_SENSOR__MQTT_USERNAME',
     'TEMP_SENSOR__MQTT_PASSWORD',
+    'TEMP_SENSOR__SHT4X_MODE_NIGHT',
+    'TEMP_SENSOR__SHT4X_MODE_DAY',
+    'TEMP_SENSOR__HDC302X_HEATER_NIGHT',
+    'TEMP_SENSOR__HDC302X_HEATER_DAY',
+    'TEMP_SENSOR__SI7021_HEATER_LEVEL_NIGHT',
+    'TEMP_SENSOR__SI7021_HEATER_LEVEL_DAY',
     'TEMP_SENSOR__TSL2561_GAIN_NIGHT',
     'TEMP_SENSOR__TSL2561_GAIN_DAY',
     'TEMP_SENSOR__TSL2561_INT_NIGHT',
@@ -6319,7 +7436,9 @@ const field_names = [
 const checkbox_field_names = [
     'ENCRYPT_PASSWORDS',
     'FOCUS_MODE',
+    'USE_NIGHT_COLOR',
     'AUTO_WB',
+    'AUTO_WB_DAY',
     'CCD_COOLING',
     'GPS_ENABLE',
     'DETECT_STARS',
@@ -6327,6 +7446,7 @@ const checkbox_field_names = [
     'DETECT_DRAW',
     'CAPTURE_PAUSE',
     'TIMELAPSE_ENABLE',
+    'TIMELAPSE__FFMPEG_REPORT',
     'DAYTIME_CAPTURE',
     'DAYTIME_CAPTURE_SAVE',
     'DAYTIME_TIMELAPSE',
@@ -6337,6 +7457,7 @@ const checkbox_field_names = [
     'IMAGE_STRETCH__MOONMODE',
     'IMAGE_STRETCH__DAYTIME',
     'KEOGRAM_LABEL',
+    'LONGTERM_KEOGRAM__ENABLE',
     'STARTRAILS_MOONMODE_THOLD',
     'STARTRAILS_USE_DB_DATA',
     'STARTRAILS_TIMELAPSE',
@@ -6349,6 +7470,7 @@ const checkbox_field_names = [
     'FISH2PANO__ENABLE',
     'FISH2PANO__FLIP_H',
     'FISH2PANO__ENABLE_CARDINAL_DIRS',
+    'IMAGE_ROTATE_KEEP_SIZE',
     'IMAGE_EXPORT_FLIP_V',
     'IMAGE_EXPORT_FLIP_H',
     'IMAGE_SAVE_FITS',
@@ -6361,6 +7483,11 @@ const checkbox_field_names = [
     'NIGHT_GRAYSCALE',
     'DAYTIME_GRAYSCALE',
     'MOON_OVERLAY__ENABLE',
+    'MOON_OVERLAY__FLIP_V',
+    'MOON_OVERLAY__FLIP_H',
+    'LIGHTGRAPH_OVERLAY__ENABLE',
+    'LIGHTGRAPH_OVERLAY__LABEL',
+    'LIGHTGRAPH_OVERLAY__HOUR_LINES',
     'TEXT_PROPERTIES__FONT_OUTLINE',
     'CARDINAL_DIRS__ENABLE',
     'CARDINAL_DIRS__SWAP_NS',
@@ -6368,6 +7495,7 @@ const checkbox_field_names = [
     'CARDINAL_DIRS__OUTLINE_CIRCLE',
     'ORB_PROPERTIES__RETROGRADE',
     'FILETRANSFER__CERT_BYPASS',
+    'FILETRANSFER__ATOMIC_TRANSFERS',
     'FILETRANSFER__UPLOAD_METADATA',
     'FILETRANSFER__UPLOAD_RAW',
     'FILETRANSFER__UPLOAD_FITS',
@@ -6403,6 +7531,10 @@ const checkbox_field_names = [
     'LIBCAMERA__AWB_ENABLE',
     'LIBCAMERA__AWB_ENABLE_DAY',
     'ACCUM_CAMERA__EVEN_EXPOSURES',
+    'TEMP_SENSOR__SHT3X_HEATER_NIGHT',
+    'TEMP_SENSOR__SHT3X_HEATER_DAY',
+    'TEMP_SENSOR__HTU31D_HEATER_NIGHT',
+    'TEMP_SENSOR__HTU31D_HEATER_DAY',
     'TEMP_SENSOR__MQTT_TLS',
     'TEMP_SENSOR__MQTT_CERT_BYPASS',
     'DEW_HEATER__ENABLE_DAY',
@@ -6452,6 +7584,7 @@ $('#form_config').on('submit', function() {
     Object.keys(fields).forEach((key) => {
         fields[key].error.css({'display' : 'none'});
     });
+    $('#failure-fields').css({'display' : 'none'});
 
 
     // Populate fields object
@@ -6476,10 +7609,10 @@ $('#form_config').on('submit', function() {
         url: "{{ url_for('indi_allsky.ajax_config_view') }}",
         contentType: "application/json",
         data: JSON.stringify(json_data),
-        success: function(data){
+        success: function(rdata){
             $("#loader_config").css({'display' : 'none'});
 
-            successMessage.html(data['success-message']);
+            successMessage.html(rdata['success-message']);
             successMessage.css({'display' : 'block'});
             setTimeout(function() {
                 successMessage.css({'display' : 'none'});
@@ -6487,15 +7620,24 @@ $('#form_config').on('submit', function() {
 
             $('#CONFIG_NOTE').val('');
         },
-        error: function(data){
+        error: function(rdata){
             $("#loader_config").css({'display' : 'none'});
 
-            var errors = JSON.parse(data.responseText);
+            var errors = JSON.parse(rdata.responseText);
+
+            var error_fields = new Array();
             Object.keys(errors).forEach((key) => {
                 fields[key].input.addClass('is-invalid');
-                fields[key].error.html(errors[key][0]);
+                fields[key].error.html(errors[key].join('<br>'));
                 fields[key].error.css({'display' : 'block'});
+
+                if (key != 'form_global') {
+                    error_fields.push(key);
+                };
             });
+
+            $('#failure-fields').html(error_fields.join('<br>'));
+            $('#failure-fields').css({'display' : 'block'});
         },
     });
 
@@ -6553,9 +7695,13 @@ $('#FOCUS_MODE').on('change', function() {
     if ($('#FOCUS_MODE').prop('checked')) {
         $('#FOCUS_DELAY').removeAttr('readonly');
         $('#FOCUS_DELAY').removeAttr('disabled');
+        $('#FOCUS_DELAY').removeClass('bg-dark');
+        $('#FOCUS_DELAY').removeClass('text-secondary');
     } else {
         $('#FOCUS_DELAY').attr('readonly', true);
         $('#FOCUS_DELAY').attr('disabled', true);
+        $('#FOCUS_DELAY').addClass('bg-dark');
+        $('#FOCUS_DELAY').addClass('text-secondary');
     }
 });
 
@@ -6564,9 +7710,13 @@ $('#CCD_COOLING').on('change', function() {
     if ($('#CCD_COOLING').prop('checked')) {
         $('#CCD_TEMP').removeAttr('readonly');
         $('#CCD_TEMP').removeAttr('disabled');
+        $('#CCD_TEMP').removeClass('bg-dark');
+        $('#CCD_TEMP').removeClass('text-secondary');
     } else {
         $('#CCD_TEMP').attr('readonly', true);
         $('#CCD_TEMP').attr('disabled', true);
+        $('#CCD_TEMP').addClass('bg-dark');
+        $('#CCD_TEMP').addClass('text-secondary');
     }
 });
 
@@ -6593,13 +7743,21 @@ $('#STARTRAILS_MOONMODE_THOLD').on('change', function() {
     if ($('#STARTRAILS_MOONMODE_THOLD').prop('checked')) {
         $('#STARTRAILS_MOON_ALT_THOLD').attr('disabled', true);
         $('#STARTRAILS_MOON_ALT_THOLD').attr('readonly', true);
+        $('#STARTRAILS_MOON_ALT_THOLD').addClass('bg-dark');
+        $('#STARTRAILS_MOON_ALT_THOLD').addClass('text-secondary');
         $('#STARTRAILS_MOON_PHASE_THOLD').attr('disabled', true);
         $('#STARTRAILS_MOON_PHASE_THOLD').attr('readonly', true);
+        $('#STARTRAILS_MOON_PHASE_THOLD').addClass('bg-dark');
+        $('#STARTRAILS_MOON_PHASE_THOLD').addClass('text-secondary');
     } else {
         $('#STARTRAILS_MOON_ALT_THOLD').removeAttr('disabled');
         $('#STARTRAILS_MOON_ALT_THOLD').removeAttr('readonly');
+        $('#STARTRAILS_MOON_ALT_THOLD').removeClass('bg-dark');
+        $('#STARTRAILS_MOON_ALT_THOLD').removeClass('text-secondary');
         $('#STARTRAILS_MOON_PHASE_THOLD').removeAttr('disabled');
         $('#STARTRAILS_MOON_PHASE_THOLD').removeAttr('readonly');
+        $('#STARTRAILS_MOON_PHASE_THOLD').removeClass('bg-dark');
+        $('#STARTRAILS_MOON_PHASE_THOLD').removeClass('text-secondary');
     }
 });
 
@@ -6623,6 +7781,220 @@ $('#CARDINAL_DIRS__ENABLE').on('change', function() {
         $('#FISH2PANO__ENABLE_CARDINAL_DIRS').attr('disabled', true);
     }
 });
+
+// Night color settings
+$('#USE_NIGHT_COLOR').on('change', function() {
+    if ($('#USE_NIGHT_COLOR').prop('checked')) {
+        $('#SCNR_ALGORITHM_DAY').attr('readonly', true);
+        $('#SCNR_ALGORITHM_DAY').attr('disabled', true);
+        $('#SCNR_ALGORITHM_DAY').addClass('bg-dark');
+        $('#SCNR_ALGORITHM_DAY').addClass('text-secondary');
+        $('#WBR_FACTOR_DAY').attr('readonly', true);
+        $('#WBR_FACTOR_DAY').attr('disabled', true);
+        $('#WBR_FACTOR_DAY').addClass('bg-dark');
+        $('#WBR_FACTOR_DAY').addClass('text-secondary');
+        $('#WBG_FACTOR_DAY').attr('readonly', true);
+        $('#WBG_FACTOR_DAY').attr('disabled', true);
+        $('#WBG_FACTOR_DAY').addClass('bg-dark');
+        $('#WBG_FACTOR_DAY').addClass('text-secondary');
+        $('#WBB_FACTOR_DAY').attr('readonly', true);
+        $('#WBB_FACTOR_DAY').attr('disabled', true);
+        $('#WBB_FACTOR_DAY').addClass('bg-dark');
+        $('#WBB_FACTOR_DAY').addClass('text-secondary');
+        $('#AUTO_WB_DAY').attr('disabled', true);
+        $('#SATURATION_FACTOR_DAY').attr('readonly', true);
+        $('#SATURATION_FACTOR_DAY').attr('disabled', true);
+        $('#SATURATION_FACTOR_DAY').addClass('bg-dark');
+        $('#SATURATION_FACTOR_DAY').addClass('text-secondary');
+        $('#GAMMA_CORRECTION_DAY').attr('readonly', true);
+        $('#GAMMA_CORRECTION_DAY').attr('disabled', true);
+        $('#GAMMA_CORRECTION_DAY').addClass('bg-dark');
+        $('#GAMMA_CORRECTION_DAY').addClass('text-secondary');
+    } else {
+        $('#SCNR_ALGORITHM_DAY').removeAttr('readonly');
+        $('#SCNR_ALGORITHM_DAY').removeAttr('disabled');
+        $('#SCNR_ALGORITHM_DAY').removeClass('bg-dark');
+        $('#SCNR_ALGORITHM_DAY').removeClass('text-secondary');
+        $('#WBR_FACTOR_DAY').removeAttr('readonly');
+        $('#WBR_FACTOR_DAY').removeAttr('disabled');
+        $('#WBR_FACTOR_DAY').removeClass('bg-dark');
+        $('#WBR_FACTOR_DAY').removeClass('text-secondary');
+        $('#WBG_FACTOR_DAY').removeAttr('readonly');
+        $('#WBG_FACTOR_DAY').removeAttr('disabled');
+        $('#WBG_FACTOR_DAY').removeClass('bg-dark');
+        $('#WBG_FACTOR_DAY').removeClass('text-secondary');
+        $('#WBB_FACTOR_DAY').removeAttr('readonly');
+        $('#WBB_FACTOR_DAY').removeAttr('disabled');
+        $('#WBB_FACTOR_DAY').removeClass('bg-dark');
+        $('#WBB_FACTOR_DAY').removeClass('text-secondary');
+        $('#AUTO_WB_DAY').removeAttr('disabled');
+        $('#SATURATION_FACTOR_DAY').removeAttr('readonly');
+        $('#SATURATION_FACTOR_DAY').removeAttr('disabled');
+        $('#SATURATION_FACTOR_DAY').removeClass('bg-dark');
+        $('#SATURATION_FACTOR_DAY').removeClass('text-secondary');
+        $('#GAMMA_CORRECTION_DAY').removeAttr('readonly');
+        $('#GAMMA_CORRECTION_DAY').removeAttr('disabled');
+        $('#GAMMA_CORRECTION_DAY').removeClass('bg-dark');
+        $('#GAMMA_CORRECTION_DAY').removeClass('text-secondary');
+    }
+});
+
+
+// Dew Heater thresholds
+$('#DEW_HEATER__THOLD_ENABLE').on('change', function() {
+    if ($('#DEW_HEATER__THOLD_ENABLE').prop('checked')) {
+        $('#DEW_HEATER__LEVEL_DEF').val(0);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').removeAttr('readonly');
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').removeAttr('disabled');
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').removeClass('bg-dark');
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').removeClass('text-secondary');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').removeAttr('readonly');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').removeAttr('disabled');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').removeClass('bg-dark');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').removeClass('text-secondary');
+        $('#DEW_HEATER__MANUAL_TARGET').removeAttr('readonly');
+        $('#DEW_HEATER__MANUAL_TARGET').removeAttr('disabled');
+        $('#DEW_HEATER__MANUAL_TARGET').removeClass('bg-dark');
+        $('#DEW_HEATER__MANUAL_TARGET').removeClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_LOW').removeAttr('readonly');
+        $('#DEW_HEATER__LEVEL_LOW').removeAttr('disabled');
+        $('#DEW_HEATER__LEVEL_LOW').removeClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_LOW').removeClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_MED').removeAttr('readonly');
+        $('#DEW_HEATER__LEVEL_MED').removeAttr('disabled');
+        $('#DEW_HEATER__LEVEL_MED').removeClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_MED').removeClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_HIGH').removeAttr('readonly');
+        $('#DEW_HEATER__LEVEL_HIGH').removeAttr('disabled');
+        $('#DEW_HEATER__LEVEL_HIGH').removeClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_HIGH').removeClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').removeAttr('readonly');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').removeAttr('disabled');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').removeClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').removeClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_MED').removeAttr('readonly');
+        $('#DEW_HEATER__THOLD_DIFF_MED').removeAttr('disabled');
+        $('#DEW_HEATER__THOLD_DIFF_MED').removeClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_MED').removeClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').removeAttr('readonly');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').removeAttr('disabled');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').removeClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').removeClass('text-secondary');
+    } else {
+        $('#DEW_HEATER__LEVEL_DEF').val(100);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').attr('readonly', true);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').attr('disabled', true);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').addClass('bg-dark');
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').addClass('text-secondary');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').attr('readonly', true);
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').attr('disabled', true);
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').addClass('bg-dark');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').addClass('text-secondary');
+        $('#DEW_HEATER__MANUAL_TARGET').attr('readonly', true);
+        $('#DEW_HEATER__MANUAL_TARGET').attr('disabled', true);
+        $('#DEW_HEATER__MANUAL_TARGET').addClass('bg-dark');
+        $('#DEW_HEATER__MANUAL_TARGET').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_LOW').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_LOW').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_LOW').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_LOW').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_MED').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_MED').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_MED').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_MED').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_HIGH').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_HIGH').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_HIGH').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_HIGH').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_LOW').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_LOW').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_MED').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_MED').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_MED').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_MED').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').addClass('text-secondary');
+    }
+});
+
+
+// Fan thresholds
+$('#FAN__THOLD_ENABLE').on('change', function() {
+    if ($('#FAN__THOLD_ENABLE').prop('checked')) {
+        $('#FAN__LEVEL_DEF').val(0);
+        $('#FAN__TEMP_USER_VAR_SLOT').removeAttr('readonly');
+        $('#FAN__TEMP_USER_VAR_SLOT').removeAttr('disabled');
+        $('#FAN__TEMP_USER_VAR_SLOT').removeClass('bg-dark');
+        $('#FAN__TEMP_USER_VAR_SLOT').removeClass('text-secondary');
+        $('#FAN__TARGET').removeAttr('readonly');
+        $('#FAN__TARGET').removeAttr('disabled');
+        $('#FAN__TARGET').removeClass('bg-dark');
+        $('#FAN__TARGET').removeClass('text-secondary');
+        $('#FAN__LEVEL_LOW').removeAttr('readonly');
+        $('#FAN__LEVEL_LOW').removeAttr('disabled');
+        $('#FAN__LEVEL_LOW').removeClass('bg-dark');
+        $('#FAN__LEVEL_LOW').removeClass('text-secondary');
+        $('#FAN__LEVEL_MED').removeAttr('readonly');
+        $('#FAN__LEVEL_MED').removeAttr('disabled');
+        $('#FAN__LEVEL_MED').removeClass('bg-dark');
+        $('#FAN__LEVEL_MED').removeClass('text-secondary');
+        $('#FAN__LEVEL_HIGH').removeAttr('readonly');
+        $('#FAN__LEVEL_HIGH').removeAttr('disabled');
+        $('#FAN__LEVEL_HIGH').removeClass('bg-dark');
+        $('#FAN__LEVEL_HIGH').removeClass('text-secondary');
+        $('#FAN__THOLD_DIFF_LOW').removeAttr('readonly');
+        $('#FAN__THOLD_DIFF_LOW').removeAttr('disabled');
+        $('#FAN__THOLD_DIFF_LOW').removeClass('bg-dark');
+        $('#FAN__THOLD_DIFF_LOW').removeClass('text-secondary');
+        $('#FAN__THOLD_DIFF_MED').removeAttr('readonly');
+        $('#FAN__THOLD_DIFF_MED').removeAttr('disabled');
+        $('#FAN__THOLD_DIFF_MED').removeClass('bg-dark');
+        $('#FAN__THOLD_DIFF_MED').removeClass('text-secondary');
+        $('#FAN__THOLD_DIFF_HIGH').removeAttr('readonly');
+        $('#FAN__THOLD_DIFF_HIGH').removeAttr('disabled');
+        $('#FAN__THOLD_DIFF_HIGH').removeClass('bg-dark');
+        $('#FAN__THOLD_DIFF_HIGH').removeClass('text-secondary');
+    } else {
+        $('#FAN__LEVEL_DEF').val(100);
+        $('#FAN__TEMP_USER_VAR_SLOT').attr('readonly', true);
+        $('#FAN__TEMP_USER_VAR_SLOT').attr('disabled', true);
+        $('#FAN__TEMP_USER_VAR_SLOT').addClass('bg-dark');
+        $('#FAN__TEMP_USER_VAR_SLOT').addClass('text-secondary');
+        $('#FAN__TARGET').attr('readonly', true);
+        $('#FAN__TARGET').attr('disabled', true);
+        $('#FAN__TARGET').addClass('bg-dark');
+        $('#FAN__TARGET').addClass('text-secondary');
+        $('#FAN__LEVEL_LOW').attr('readonly', true);
+        $('#FAN__LEVEL_LOW').attr('disabled', true);
+        $('#FAN__LEVEL_LOW').addClass('bg-dark');
+        $('#FAN__LEVEL_LOW').addClass('text-secondary');
+        $('#FAN__LEVEL_MED').attr('readonly', true);
+        $('#FAN__LEVEL_MED').attr('disabled', true);
+        $('#FAN__LEVEL_MED').addClass('bg-dark');
+        $('#FAN__LEVEL_MED').addClass('text-secondary');
+        $('#FAN__LEVEL_HIGH').attr('readonly', true);
+        $('#FAN__LEVEL_HIGH').attr('disabled', true);
+        $('#FAN__LEVEL_HIGH').addClass('bg-dark');
+        $('#FAN__LEVEL_HIGH').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_LOW').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_LOW').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_LOW').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_LOW').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_MED').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_MED').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_MED').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_MED').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_HIGH').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_HIGH').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_HIGH').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_HIGH').addClass('text-secondary');
+    }
+});
+
 
 
 $( document ).ready(function() {
@@ -6650,12 +8022,16 @@ $( document ).ready(function() {
     if (!$('#FOCUS_MODE').prop('checked')) {
         $('#FOCUS_DELAY').attr('readonly', true);
         $('#FOCUS_DELAY').attr('disabled', true);
+        $('#FOCUS_DELAY').addClass('bg-dark');
+        $('#FOCUS_DELAY').addClass('text-secondary');
     }
 
     // CCD_COOLING
     if (!$('#CCD_COOLING').prop('checked')) {
         $('#CCD_TEMP').attr('readonly', true);
         $('#CCD_TEMP').attr('disabled', true);
+        $('#CCD_TEMP').addClass('bg-dark');
+        $('#CCD_TEMP').addClass('text-secondary');
     }
 
     // libcamera AWB
@@ -6669,11 +8045,15 @@ $( document ).ready(function() {
     }
 
     // startrails moonmode
-    if (!$('#STARTRAILS_MOONMODE_THOLD').prop('checked')) {
-        $('#STARTRAILS_MOON_ALT_THOLD').removeAttr('disabled');
-        $('#STARTRAILS_MOON_ALT_THOLD').removeAttr('readonly');
-        $('#STARTRAILS_MOON_PHASE_THOLD').removeAttr('disabled');
-        $('#STARTRAILS_MOON_PHASE_THOLD').removeAttr('readonly');
+    if ($('#STARTRAILS_MOONMODE_THOLD').prop('checked')) {
+        $('#STARTRAILS_MOON_ALT_THOLD').attr('disabled', true);
+        $('#STARTRAILS_MOON_ALT_THOLD').attr('readonly', true);
+        $('#STARTRAILS_MOON_ALT_THOLD').addClass('bg-dark');
+        $('#STARTRAILS_MOON_ALT_THOLD').addClass('text-secondary');
+        $('#STARTRAILS_MOON_PHASE_THOLD').attr('disabled', true);
+        $('#STARTRAILS_MOON_PHASE_THOLD').attr('readonly', true);
+        $('#STARTRAILS_MOON_PHASE_THOLD').addClass('bg-dark');
+        $('#STARTRAILS_MOON_PHASE_THOLD').addClass('text-secondary');
     }
 
     // nonlocal assets
@@ -6685,6 +8065,112 @@ $( document ).ready(function() {
     if (!$('#CARDINAL_DIRS__ENABLE').prop('checked')) {
         $('#FISH2PANO__ENABLE_CARDINAL_DIRS').attr('disabled', true);
     }
+
+    // Night color settings
+    if ($('#USE_NIGHT_COLOR').prop('checked')) {
+        $('#SCNR_ALGORITHM_DAY').attr('readonly', true);
+        $('#SCNR_ALGORITHM_DAY').attr('disabled', true);
+        $('#SCNR_ALGORITHM_DAY').addClass('bg-dark');
+        $('#SCNR_ALGORITHM_DAY').addClass('text-secondary');
+        $('#WBR_FACTOR_DAY').attr('readonly', true);
+        $('#WBR_FACTOR_DAY').attr('disabled', true);
+        $('#WBR_FACTOR_DAY').addClass('bg-dark');
+        $('#WBR_FACTOR_DAY').addClass('text-secondary');
+        $('#WBG_FACTOR_DAY').attr('readonly', true);
+        $('#WBG_FACTOR_DAY').attr('disabled', true);
+        $('#WBG_FACTOR_DAY').addClass('bg-dark');
+        $('#WBG_FACTOR_DAY').addClass('text-secondary');
+        $('#WBB_FACTOR_DAY').attr('readonly', true);
+        $('#WBB_FACTOR_DAY').attr('disabled', true);
+        $('#WBB_FACTOR_DAY').addClass('bg-dark');
+        $('#WBB_FACTOR_DAY').addClass('text-secondary');
+        $('#AUTO_WB_DAY').attr('disabled', true);
+        $('#SATURATION_FACTOR_DAY').attr('readonly', true);
+        $('#SATURATION_FACTOR_DAY').attr('disabled', true);
+        $('#SATURATION_FACTOR_DAY').addClass('bg-dark');
+        $('#SATURATION_FACTOR_DAY').addClass('text-secondary');
+        $('#GAMMA_CORRECTION_DAY').attr('readonly', true);
+        $('#GAMMA_CORRECTION_DAY').attr('disabled', true);
+        $('#GAMMA_CORRECTION_DAY').addClass('bg-dark');
+        $('#GAMMA_CORRECTION_DAY').addClass('text-secondary');
+    }
+
+    // Dew Heater thresholds
+    if (!$('#DEW_HEATER__THOLD_ENABLE').prop('checked')) {
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').attr('readonly', true);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').attr('disabled', true);
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').addClass('bg-dark');
+        $('#DEW_HEATER__TEMP_USER_VAR_SLOT').addClass('text-secondary');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').attr('readonly', true);
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').attr('disabled', true);
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').addClass('bg-dark');
+        $('#DEW_HEATER__DEWPOINT_USER_VAR_SLOT').addClass('text-secondary');
+        $('#DEW_HEATER__MANUAL_TARGET').attr('readonly', true);
+        $('#DEW_HEATER__MANUAL_TARGET').attr('disabled', true);
+        $('#DEW_HEATER__MANUAL_TARGET').addClass('bg-dark');
+        $('#DEW_HEATER__MANUAL_TARGET').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_LOW').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_LOW').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_LOW').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_LOW').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_MED').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_MED').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_MED').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_MED').addClass('text-secondary');
+        $('#DEW_HEATER__LEVEL_HIGH').attr('readonly', true);
+        $('#DEW_HEATER__LEVEL_HIGH').attr('disabled', true);
+        $('#DEW_HEATER__LEVEL_HIGH').addClass('bg-dark');
+        $('#DEW_HEATER__LEVEL_HIGH').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_LOW').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_LOW').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_LOW').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_MED').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_MED').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_MED').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_MED').addClass('text-secondary');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').attr('readonly', true);
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').attr('disabled', true);
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').addClass('bg-dark');
+        $('#DEW_HEATER__THOLD_DIFF_HIGH').addClass('text-secondary');
+    }
+
+    // Fan thresholds
+    if (!$('#FAN__THOLD_ENABLE').prop('checked')) {
+        $('#FAN__TEMP_USER_VAR_SLOT').attr('readonly', true);
+        $('#FAN__TEMP_USER_VAR_SLOT').attr('disabled', true);
+        $('#FAN__TEMP_USER_VAR_SLOT').addClass('bg-dark');
+        $('#FAN__TEMP_USER_VAR_SLOT').addClass('text-secondary');
+        $('#FAN__TARGET').attr('readonly', true);
+        $('#FAN__TARGET').attr('disabled', true);
+        $('#FAN__TARGET').addClass('bg-dark');
+        $('#FAN__TARGET').addClass('text-secondary');
+        $('#FAN__LEVEL_LOW').attr('readonly', true);
+        $('#FAN__LEVEL_LOW').attr('disabled', true);
+        $('#FAN__LEVEL_LOW').addClass('bg-dark');
+        $('#FAN__LEVEL_LOW').addClass('text-secondary');
+        $('#FAN__LEVEL_MED').attr('readonly', true);
+        $('#FAN__LEVEL_MED').attr('disabled', true);
+        $('#FAN__LEVEL_MED').addClass('bg-dark');
+        $('#FAN__LEVEL_MED').addClass('text-secondary');
+        $('#FAN__LEVEL_HIGH').attr('readonly', true);
+        $('#FAN__LEVEL_HIGH').attr('disabled', true);
+        $('#FAN__LEVEL_HIGH').addClass('bg-dark');
+        $('#FAN__LEVEL_HIGH').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_LOW').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_LOW').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_LOW').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_LOW').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_MED').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_MED').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_MED').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_MED').addClass('text-secondary');
+        $('#FAN__THOLD_DIFF_HIGH').attr('readonly', true);
+        $('#FAN__THOLD_DIFF_HIGH').attr('disabled', true);
+        $('#FAN__THOLD_DIFF_HIGH').addClass('bg-dark');
+        $('#FAN__THOLD_DIFF_HIGH').addClass('text-secondary');
+    }
+
 });
 
 </script>

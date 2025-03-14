@@ -5,7 +5,7 @@ set -o errexit
 set -o nounset
 shopt -s nullglob
 
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 
@@ -100,6 +100,21 @@ echo "Memory: $MEM_TOTAL kB"
 echo
 echo "System: $SYSTEM_MODEL"
 
+
+if [[ -d "/etc/stellarmate" ]]; then
+    echo
+    echo "Detected Stellarmate"
+    if [[ -f "/etc/stellarmate/version" ]]; then
+        head -n 1 /etc/stellarmate/version || true
+    fi
+    echo
+elif [[ -f "/etc/astroberry.version" ]]; then
+    echo
+    echo "Detected Astroberry server"
+    echo
+fi
+
+
 echo
 uname -a
 
@@ -160,6 +175,11 @@ echo "User info"
 id
 echo
 
+echo
+echo "gpsd user info"
+id gpsd || true
+echo
+
 echo "Process info"
 # shellcheck disable=SC2009
 ps auxwww | grep indi | grep -v grep || true
@@ -171,7 +191,9 @@ ps auxwww | grep -i "screen\|tmux\|byobu" | grep -v grep || true
 echo
 
 echo "USB info"
-lsusb
+lsusb || true
+echo
+lsusb -t || true
 echo
 
 echo "USB Permissions"
@@ -187,7 +209,12 @@ v4l2-ctl --list-devices || true
 echo
 
 echo "Module info"
-lsmod
+lsmod || true
+echo
+
+
+echo "I2C info"
+i2cdetect -y 1 || true
 echo
 
 
@@ -221,11 +248,9 @@ ss -ant | grep 7624 || true
 echo
 
 
-if which indi_getprop >/dev/null 2>&1; then
-    echo "Detected indi properties"
-    indi_getprop -v 2>&1 || true
-    echo
-fi
+echo "Detected indi properties"
+indi_getprop -v 2>&1 || true
+echo
 
 
 if pkg-config --exists libcamera; then
@@ -239,7 +264,7 @@ fi
 
 
 echo "libcamera packages"
-dpkg -l | grep libcamera || true
+dpkg -l | grep -E "libcamera|rpicam" || true
 echo
 
 echo "libcamera cameras"
@@ -282,6 +307,16 @@ if [ -d "${ALLSKY_DIRECTORY}/virtualenv/indi-allsky" ]; then
 
     echo "\`\`\`"  # markdown
 
+
+    echo
+    echo "Flask config"
+    echo "\`\`\`json"  # markdown
+    # Remove all secrets from config
+    # SQLALCHEMY_DATABASE_URI will contain passwords if using mysql
+    jq --arg redacted "REDACTED" '.SQLALCHEMY_DATABASE_URI = $redacted | .SECRET_KEY = $redacted | .PASSWORD_KEY = $redacted' < /etc/indi-allsky/flask.json || true
+    echo "\`\`\`"  # markdown
+
+
     echo
     echo "indi-allsky config (passwords redacted)"
     INDI_ALLSKY_CONFIG=$("${ALLSKY_DIRECTORY}/config.py" dump)
@@ -296,7 +331,7 @@ if [ -d "${ALLSKY_DIRECTORY}/virtualenv/indi-allsky" ]; then
 
     echo "\`\`\`json"  # markdown
     # Remove all secrets from config
-    echo "$INDI_ALLSKY_CONFIG" | jq --arg redacted "REDACTED" '.OWNER = $redacted | .FILETRANSFER.PASSWORD = $redacted | .FILETRANSFER.PASSWORD_E = $redacted | .S3UPLOAD.SECRET_KEY = $redacted | .S3UPLOAD.SECRET_KEY_E = $redacted | .MQTTPUBLISH.PASSWORD = $redacted | .MQTTPUBLISH.PASSWORD_E = $redacted | .SYNCAPI.APIKEY = $redacted | .SYNCAPI.APIKEY_E = $redacted | .PYCURL_CAMERA.PASSWORD = $redacted | .PYCURL_CAMERA.PASSWORD_E = $redacted | .TEMP_SENSOR.OPENWEATHERMAP_APIKEY = $redacted | .TEMP_SENSOR.OPENWEATHERMAP_APIKEY_E = $redacted | .TEMP_SENSOR.WUNDERGROUND_APIKEY = $redacted | .TEMP_SENSOR.WUNDERGROUND_APIKEY_E = $redacted | .TEMP_SENSOR.MQTT_PASSWORD = $redacted | .TEMP_SENSOR.MQTT_PASSWORD_E = $redacted | .ADSB.PASSWORD = $redacted | .ADSB.PASSWORD_E = $redacted'
+    echo "$INDI_ALLSKY_CONFIG" | jq --arg redacted "REDACTED" '.OWNER = $redacted | .FILETRANSFER.PASSWORD = $redacted | .FILETRANSFER.PASSWORD_E = $redacted | .S3UPLOAD.SECRET_KEY = $redacted | .S3UPLOAD.SECRET_KEY_E = $redacted | .MQTTPUBLISH.PASSWORD = $redacted | .MQTTPUBLISH.PASSWORD_E = $redacted | .SYNCAPI.APIKEY = $redacted | .SYNCAPI.APIKEY_E = $redacted | .PYCURL_CAMERA.PASSWORD = $redacted | .PYCURL_CAMERA.PASSWORD_E = $redacted | .TEMP_SENSOR.OPENWEATHERMAP_APIKEY = $redacted | .TEMP_SENSOR.OPENWEATHERMAP_APIKEY_E = $redacted | .TEMP_SENSOR.WUNDERGROUND_APIKEY = $redacted | .TEMP_SENSOR.WUNDERGROUND_APIKEY_E = $redacted | .TEMP_SENSOR.ASTROSPHERIC_APIKEY = $redacted | .TEMP_SENSOR.ASTROSPHERIC_APIKEY_E = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_APIKEY = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_APIKEY_E = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_APPLICATIONKEY = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_APPLICATIONKEY_E = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_MACADDRESS = $redacted | .TEMP_SENSOR.AMBIENTWEATHER_MACADDRESS_E = $redacted | .TEMP_SENSOR.ECOWITT_APIKEY = $redacted | .TEMP_SENSOR.ECOWITT_APIKEY_E = $redacted | .TEMP_SENSOR.ECOWITT_APPLICATIONKEY = $redacted | .TEMP_SENSOR.ECOWITT_APPLICATIONKEY_E = $redacted | .TEMP_SENSOR.ECOWITT_MACADDRESS = $redacted | .TEMP_SENSOR.ECOWITT_MACADDRESS_E = $redacted |.TEMP_SENSOR.MQTT_PASSWORD = $redacted | .TEMP_SENSOR.MQTT_PASSWORD_E = $redacted | .ADSB.PASSWORD = $redacted | .ADSB.PASSWORD_E = $redacted'
 
     deactivate
     echo
@@ -304,8 +339,17 @@ else
     echo "indi-allsky virtualenv is not created"
     echo
 fi
-
 echo "\`\`\`"  # markdown
+
+
+echo
+echo "indi-allky log errors"
+echo "\`\`\`"  # markdown
+grep -i "error" /var/log/indi-allsky/indi-allsky.log | tail -n 30 || true
+echo "\`\`\`"  # markdown
+
+
+echo
 echo "#################################"
 echo "###     end support info      ###"
 echo "#################################"

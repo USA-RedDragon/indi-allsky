@@ -1,18 +1,19 @@
-### This file is targeted to Raspbian/Debian 11 and Python 3.9+
+### This file is targeted to Raspbian/Debian 12 and Python 3.10+
 # https://www.wheelodex.org/projects/astropy/
-astropy >= 5.3.3
+astropy >= 6.1.0
+pyerfa >= 2.0.1.4
 # https://www.wheelodex.org/projects/numpy/
-numpy >= 1.22.2, < 2.0
+numpy >= 2.1.0
 # https://www.wheelodex.org/projects/opencv-python-headless/
-opencv-python-headless >= 4.8.1.78
+opencv-python-headless >= 4.10.0.84
 # https://www.wheelodex.org/projects/scipy/
 scipy >= 1.11.3
 # https://www.wheelodex.org/projects/ccdproc/
-ccdproc
+ccdproc >= 2.4.2
 # https://www.wheelodex.org/projects/scikit-image/
-scikit-image >= 0.20.0
-astroalign
-bottleneck
+scikit-image >= 0.25.0
+astroalign >= 2.6.0
+bottleneck >= 1.4.0
 python-dateutil
 ephem
 skyfield
@@ -27,8 +28,7 @@ imageio-ffmpeg
 # https://www.wheelodex.org/projects/imagecodecs/
 #imagecodecs
 cython
-# rawpy v0.22.0 requires numpy 2.0
-rawpy <= 0.21.0
+rawpy >= 0.23.0
 pygifsicle
 gunicorn[gthread] >= 22.0.0
 inotify
@@ -42,7 +42,7 @@ werkzeug
 is-safe-url
 certifi >= 2024.7.4
 # https://www.wheelodex.org/projects/cryptography/
-cryptography >= 42.0.5
+cryptography >= 43.0.1
 dbus-python
 paho-mqtt >= 2.0.0
 setuptools-rust
@@ -51,7 +51,8 @@ bcrypt
 passlib[argon2] >= 1.7.4
 prettytable
 lxml
-shapely
+shapely >= 2.0.6
 requests-toolbelt
 fish2pano >= 0.4.1
 pytz
+mysql-connector-python

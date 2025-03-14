@@ -1,3 +1,4 @@
+---
 services:
   indi.base:
     build:
@@ -28,6 +29,9 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.indiserver_debian12
       #dockerfile: docker/Dockerfile.indiserver_ubuntu2204
+      args:
+        - INDI_VERSION=${INDIALLSKY_INDI_VERSION}
+        - INDI_CAMERA_VENDOR=${INDIALLSKY_CAMERA_VENDOR}
     env_file: .env
     depends_on:
       - indi.base
@@ -46,8 +50,8 @@ services:
     volumes:
       - images_indi_allsky:/var/www/html/allsky
       - migrations_indi_allsky:/var/lib/indi-allsky
-    #ports:
-    #  - "8000:8000"
+  #  ports:
+  #    - "8000:8000"
 
 
   capture.indi.allsky:
@@ -56,6 +60,7 @@ services:
       dockerfile: docker/Dockerfile.capture
     env_file: .env
     depends_on:
+      - indi.base
       - mariadb.indi.allsky
       - indiserver.indi.allsky
     #privileged: true  # enable for libcamera
@@ -101,4 +106,3 @@ volumes:
   migrations_indi_allsky:
   images_indi_allsky:
   mosquitto_data_indi_allsky:
-

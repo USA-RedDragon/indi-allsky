@@ -16,6 +16,7 @@ export PATH
 #export INDIALLSKY_INSTALL_INDISERVER=true
 #export INDIALLSKY_HTTP_PORT=80
 #export INDIALLSKY_HTTPS_PORT=443
+#export INDIALLSKY_INDI_PORT=7624
 #export INDIALLSKY_TIMEZONE="America/New_York"
 #export INDIALLSKY_INDI_VERSION=1.9.9
 #export INDIALLSKY_CCD_DRIVER=indi_simulator_ccd
@@ -49,6 +50,8 @@ USE_MYSQL_DATABASE="${INDIALLSKY_USE_MYSQL_DATABASE:-false}"
 
 CAMERA_INTERFACE="${INDIALLSKY_CAMERA_INTERFACE:-}"
 
+OS_PACKAGE_UPGRADE="${INDI_ALLSKY_OS_PACKAGE_UPGRADE:-}"
+
 INSTALL_INDI="${INDIALLSKY_INSTALL_INDI:-true}"
 INSTALL_LIBCAMERA="${INDIALLSKY_INSTALL_LIBCAMERA:-false}"
 
@@ -60,6 +63,7 @@ GPS_DRIVER="${INDIALLSKY_GPS_DRIVER:-}"
 
 HTTP_PORT="${INDIALLSKY_HTTP_PORT:-80}"
 HTTPS_PORT="${INDIALLSKY_HTTPS_PORT:-443}"
+INDI_PORT="${INDIALLSKY_INDI_PORT:-7624}"
 
 FLASK_AUTH_ALL_VIEWS="${INDIALLSKY_FLASK_AUTH_ALL_VIEWS:-}"
 WEB_USER="${INDIALLSKY_WEB_USER:-}"
@@ -70,12 +74,13 @@ WEB_EMAIL="${INDIALLSKY_WEB_EMAIL:-}"
 OPTIONAL_PYTHON_MODULES="${INDIALLSKY_OPTIONAL_PYTHON_MODULES:-false}"
 GPIO_PYTHON_MODULES="${INDIALLSKY_GPIO_PYTHON_MODULES:-false}"
 
-PYINDI_2_0_4="git+https://github.com/indilib/pyindi-client.git@6f8fa80#egg=pyindi-client"
+PYINDI_2_0_4="git+https://github.com/indilib/pyindi-client.git@d8ad88f#egg=pyindi-client"
 PYINDI_2_0_0="git+https://github.com/indilib/pyindi-client.git@674706f#egg=pyindi-client"
 PYINDI_1_9_9="git+https://github.com/indilib/pyindi-client.git@ce808b7#egg=pyindi-client"
 PYINDI_1_9_8="git+https://github.com/indilib/pyindi-client.git@ffd939b#egg=pyindi-client"
 
-ASTROBERRY="false"
+STELLARMATE="${INDIALLSKY_STELLARMATE:-false}"
+ASTROBERRY="${INDIALLSKY_ASTROBERRY:-false}"
 #### end config ####
 
 
@@ -140,6 +145,15 @@ MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk "{print \$2}")
 PGRP=$(id -ng)
 
 
+if which whiptail >/dev/null 2>&1; then
+    ### whiptail might not be installed on first run
+    WHIPTAIL_BIN=$(which whiptail)
+
+    ### testing
+    #WHIPTAIL_BIN=""
+fi
+
+
 echo "###############################################"
 echo "### Welcome to the indi-allsky setup script ###"
 echo "###############################################"
@@ -155,29 +169,81 @@ if [[ -n "${VIRTUAL_ENV:-}" ]]; then
 fi
 
 
+# basic checks
+if ! [[ "$HTTP_PORT" =~ ^[^0][0-9]{1,5}$ ]]; then
+    echo "Invalid HTTP port: $HTTP_PORT"
+    echo
+    exit 1
+fi
+
+if ! [[ "$HTTPS_PORT" =~ ^[^0][0-9]{1,5}$ ]]; then
+    echo "Invalid HTTPS port: $HTTPS_PORT"
+    echo
+    exit 1
+fi
+
+if ! [[ "$INDI_PORT" =~ ^[^0][0-9]{1,5}$ ]]; then
+    echo "Invalid INDI port: $INDI_PORT"
+    echo
+    exit 1
+fi
+
+
 if [ -f "/usr/local/bin/indiserver" ]; then
     # Do not install INDI
     INSTALL_INDI="false"
     INDI_DRIVER_PATH="/usr/local/bin"
 
     echo
-    echo
     echo "Detected a custom installation of INDI in /usr/local/bin"
     echo
-    echo
-    sleep 3
 fi
 
 
-if [[ -f "/etc/astroberry.version" ]]; then
+if [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
+    echo
+    echo
+    echo "Detected 64-bit kernel (aarch64) on 32-bit system image"
+    echo "You must add the following parameter to /boot/firmware/config.txt and reboot:"
+    echo
+    echo "  arm_64bit=0"
+    echo
+    exit 1
+fi
+
+
+if [[ -d "/etc/stellarmate" ]]; then
+    echo
+    echo
+    echo "Detected Stellarmate"
+    echo
+
+    STELLARMATE="true"
+
+    # Stellarmate already has services on 80
+    if [ "$HTTP_PORT" -eq 80 ]; then
+        HTTP_PORT="81"
+        echo "Changing HTTP_PORT to 81"
+    fi
+
+    if [ "$HTTPS_PORT" -eq 443 ]; then
+        HTTPS_PORT="444"
+        echo "Changing HTTPS_PORT to 444"
+    fi
+
+    echo
+    echo
+    sleep 3
+
+elif [[ -f "/etc/astroberry.version" ]]; then
     echo
     echo
     echo "Detected Astroberry server"
     echo
 
 
-    if which whiptail >/dev/null 2>&1; then
-        if ! whiptail --title "WARNING" --yesno "Astroberry is no longer supported.  Please use Raspbian or Ubuntu.\n\nDo you want to proceed anyway?" 0 0 --defaultno; then
+    if [ -n "${WHIPTAIL_BIN:-}" ]; then
+        if ! "$WHIPTAIL_BIN" --title "WARNING" --yesno "Astroberry is no longer supported.  Please use Raspbian or Ubuntu.\n\nDo you want to proceed anyway?" 0 0 --defaultno; then
             exit 1
         fi
     else
@@ -218,6 +284,23 @@ if systemctl --user -q is-active "${ALLSKY_SERVICE_NAME}.service" >/dev/null 2>&
 fi
 
 
+if [[ "$(id -u)" == "0" ]]; then
+    echo "Please do not run $(basename "$0") as root"
+    echo "Re-run this script as the user which will execute the indi-allsky software"
+    echo
+    echo
+    exit 1
+fi
+
+
+
+if [ -n "${WHIPTAIL_BIN:-}" ]; then
+    "$WHIPTAIL_BIN" \
+        --title "Welcome to indi-allsky" \
+        --msgbox "*** Welcome to the indi-allsky setup script ***\n\nDistribution: $DISTRO_ID\nRelease: $DISTRO_VERSION_ID\nArch: $CPU_ARCH\nBits: $CPU_BITS\n\nCPUs: $CPU_TOTAL\nMemory: $MEM_TOTAL kB\n\nINDI Port: $INDI_PORT\nHTTP Port: $HTTP_PORT\nHTTPS Port: $HTTPS_PORT" 0 0
+fi
+
+
 echo
 echo
 echo "Distribution: $DISTRO_ID"
@@ -237,18 +320,12 @@ echo "HTDOCS_FOLDER: $HTDOCS_FOLDER"
 echo "DB_FOLDER: $DB_FOLDER"
 echo "DB_FILE: $DB_FILE"
 echo "INSTALL_INDI: $INSTALL_INDI"
+echo "INDI_PORT: $INDI_PORT"
 echo "HTTP_PORT: $HTTP_PORT"
 echo "HTTPS_PORT: $HTTPS_PORT"
 echo
 echo
 
-if [[ "$(id -u)" == "0" ]]; then
-    echo "Please do not run $(basename "$0") as root"
-    echo "Re-run this script as the user which will execute the indi-allsky software"
-    echo
-    echo
-    exit 1
-fi
 
 if ! ping -c 1 "$(hostname -s)" >/dev/null 2>&1; then
     echo "To avoid the benign warnings 'Name or service not known sudo: unable to resolve host'"
@@ -270,45 +347,105 @@ sudo true
 START_TIME=$(date +%s)
 
 
-echo
-echo
-echo "indi-allsky supports the following camera interfaces."
-echo
-echo "Wiki:  https://github.com/aaronwmorris/indi-allsky/wiki/Camera-Interfaces"
-echo
-echo "             indi: For astro/planetary cameras normally connected via USB (ZWO, QHY, PlayerOne, SVBony, Altair, Touptek, etc)"
-echo "        libcamera: Supports cameras connected via CSI interface on Raspberry Pi SBCs (Raspi HQ Camera, Camera Module 3, etc)"
-echo "    pycurl_camera: Download images from a remote web camera"
-echo " indi_accumulator: Create synthetic exposures using multiple sub-exposures"
-echo "     indi_passive: Connect a second instance of indi-allsky to an existing indi-allsky indiserver"
-echo
+if [ -n "${WHIPTAIL_BIN:-}" ]; then
+    while [ -z "${CAMERA_INTERFACE:-}" ]; do
+        # shellcheck disable=SC2068
+        CAMERA_INTERFACE=$("$WHIPTAIL_BIN" \
+            --title "Select camera interface" \
+            --nocancel \
+            --radiolist "indi-allsky supports the following camera interfaces.\n\nWiki:  https://github.com/aaronwmorris/indi-allsky/wiki/Camera-Interfaces\n\nPress space to select" 0 0 0 \
+                "indi" "For astro/planetary cameras normally connected via USB (ZWO, QHY, PlayerOne, SVBony, Altair, Touptek, etc)" "OFF" \
+                "libcamera" "Supports cameras connected via CSI interface on Raspberry Pi SBCs (Raspi HQ Camera, Camera Module 3, etc)" "OFF" \
+                "pycurl_camera" "Download images from a remote web camera" "OFF" \
+                "indi_accumulator" "Create synthetic exposures using multiple sub-exposures" "OFF" \
+                "indi_passive" "Connect a second instance of indi-allsky to an existing indi-allsky indiserver" "OFF" \
+            3>&1 1>&2 2>&3)
 
-# whiptail might not be installed yet
-while [ -z "${CAMERA_INTERFACE:-}" ]; do
-    PS3="Select a camera interface: "
-    select camera_interface in indi libcamera pycurl_camera indi_accumulator indi_passive ; do
-        if [ -n "$camera_interface" ]; then
-            CAMERA_INTERFACE="$camera_interface"
-            break
+
+        # more specific libcamera selection
+        if [ "$CAMERA_INTERFACE" == "libcamera" ]; then
+
+            while [ -z "${LIBCAMERA_INTERFACE:-}" ]; do
+                LIBCAMERA_INTERFACE=$("$WHIPTAIL_BIN" \
+                    --title "Select a libcamera interface: " \
+                    --nocancel \
+                    --notags \
+                    --radiolist "https://github.com/aaronwmorris/indi-allsky/wiki/Camera-Interfaces\n\nPress space to select" 0 0 0 \
+                        "libcamera_imx477" "IMX477 - Raspberry Pi HQ Camera" "OFF" \
+                        "libcamera_imx378" "IMX378" "OFF" \
+                        "libcamera_imx708" "IMX708 - Camera Module 3" "OFF" \
+                        "libcamera_imx519" "IMX519" "OFF" \
+                        "libcamera_imx500_ai" "IMX500 - AI Camera" "OFF" \
+                        "libcamera_imx283" "IMX283 - Klarity/OneInchEye" "OFF" \
+                        "libcamera_imx462" "IMX462" "OFF" \
+                        "libcamera_imx327" "IMX327" "OFF" \
+                        "libcamera_imx678" "IMX678 - Darksee" "OFF" \
+                        "libcamera_ov5647" "OV5647" "OFF" \
+                        "libcamera_imx219" "IMX219 - Camera Module 2" "OFF" \
+                        "libcamera_imx296_gs" "IMX296 - Global Shutter" "OFF" \
+                        "libcamera_imx290" "IMX290" "OFF" \
+                        "libcamera_imx298" "IMX298" "OFF" \
+                        "libcamera_64mp_hawkeye" "64MP Hawkeye (IMX682)" "OFF" \
+                        "libcamera_64mp_owlsight" "64MP Owlsight (OV64A40)" "OFF" \
+                        "restart" "Restart camera selection" "OFF" \
+                    3>&1 1>&2 2>&3)
+            done
+
+            if [ "$LIBCAMERA_INTERFACE" == "restart" ]; then
+                CAMERA_INTERFACE=""
+                LIBCAMERA_INTERFACE=""
+                continue
+            fi
+
+            CAMERA_INTERFACE="$LIBCAMERA_INTERFACE"
         fi
     done
+else
+    echo
+    echo
+    echo "indi-allsky supports the following camera interfaces."
+    echo
+    echo "Wiki:  https://github.com/aaronwmorris/indi-allsky/wiki/Camera-Interfaces"
+    echo
+    echo "             indi: For astro/planetary cameras normally connected via USB (ZWO, QHY, PlayerOne, SVBony, Altair, Touptek, etc)"
+    echo "        libcamera: Supports cameras connected via CSI interface on Raspberry Pi SBCs (Raspi HQ Camera, Camera Module 3, etc)"
+    echo "    pycurl_camera: Download images from a remote web camera"
+    echo " indi_accumulator: Create synthetic exposures using multiple sub-exposures"
+    echo "     indi_passive: Connect a second instance of indi-allsky to an existing indi-allsky indiserver"
+    echo
 
-
-    # more specific libcamera selection
-    if [ "$CAMERA_INTERFACE" == "libcamera" ]; then
-        INSTALL_LIBCAMERA="true"
-
-        echo
-        PS3="Select a libcamera interface: "
-        select libcamera_interface in libcamera_imx477 libcamera_imx378 libcamera_imx708 libcamera_imx519 libcamera_imx500_ai libcamera_imx283 libcamera_imx462 libcamera_imx327 libcamera_ov5647 libcamera_imx219 libcamera_imx296_gs libcamera_imx290 libcamera_imx298 libcamera_64mp_hawkeye libcamera_64mp_owlsight; do
-            if [ -n "$libcamera_interface" ]; then
-                # overwrite variable
-                CAMERA_INTERFACE="$libcamera_interface"
+    while [ -z "${CAMERA_INTERFACE:-}" ]; do
+        PS3="Select a camera interface: "
+        select camera_interface in indi libcamera pycurl_camera indi_accumulator indi_passive ; do
+            if [ -n "$camera_interface" ]; then
+                CAMERA_INTERFACE="$camera_interface"
                 break
             fi
         done
-    fi
-done
+
+
+        # more specific libcamera selection
+        if [ "$CAMERA_INTERFACE" == "libcamera" ]; then
+            INSTALL_LIBCAMERA="true"
+
+            echo
+            PS3="Select a libcamera interface: "
+            select libcamera_interface in libcamera_imx477 libcamera_imx378 libcamera_imx708 libcamera_imx519 libcamera_imx500_ai libcamera_imx283 libcamera_imx462 libcamera_imx327 libcamera_imx678 libcamera_ov5647 libcamera_imx219 libcamera_imx296_gs libcamera_imx290 libcamera_imx298 libcamera_64mp_hawkeye libcamera_64mp_owlsight; do
+                if [ -n "$libcamera_interface" ]; then
+                    # overwrite variable
+                    CAMERA_INTERFACE="$libcamera_interface"
+                    break
+                fi
+            done
+        fi
+    done
+fi
+
+
+echo
+echo "Selected interface: $CAMERA_INTERFACE"
+echo
+sleep 3
 
 
 if [[ -f "/usr/local/bin/libcamera-still" || -f "/usr/local/bin/rpicam-still" ]]; then
@@ -332,963 +469,58 @@ sudo find "$(dirname "$0")" -type f ! -perm -444 -exec chmod ugo+r {} \;
 
 
 
+while [ -z "${OS_PACKAGE_UPGRADE:-}" ]; do
+    if [ -n "${WHIPTAIL_BIN:-}" ]; then
+        if "$WHIPTAIL_BIN" --title "Upgrade system packages" --yesno "Would you like to upgrade all of the system packages to the latest versions?" 0 0 --defaultno; then
+            OS_PACKAGE_UPGRADE="true"
+        else
+            OS_PACKAGE_UPGRADE="false"
+        fi
+    else
+        echo
+        echo
+        echo "Would you like to upgrade all of the system packages to the latest versions? "
+        PS3="? "
+        select package_upgrade in no yes ; do
+            if [ "${package_upgrade:-}" == "yes" ]; then
+                OS_PACKAGE_UPGRADE="true"
+                break
+            else
+                OS_PACKAGE_UPGRADE="false"
+                break
+            fi
+        done
+    fi
+done
+
+
+### These are the default requirements which may be overridden
+VIRTUALENV_REQ=requirements/requirements_latest.txt
+VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
+VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
+VIRTUALENV_REQ_GPIO=requirements/requirements_gpio.txt
+
+
 echo "**** Installing packages... ****"
-if [[ "$DISTRO_ID" == "raspbian" && "$DISTRO_VERSION_ID" == "12" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
+if [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "raspbian" ]]; then
+    if [[ "$DISTRO_VERSION_ID" == "12" ]]; then
+        RSYSLOG_USER=root
+        RSYSLOG_GROUP=adm
 
-    MYSQL_ETC="/etc/mysql"
+        MYSQL_ETC="/etc/mysql"
 
-    PYTHON_BIN=python3
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
+        PYTHON_BIN=python3.11
 
 
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
+        if [ "$CPU_ARCH" == "armv6l" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+        elif [ "$CPU_BITS" == "32" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_32.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
         fi
-    fi
 
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
 
-    if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-        sudo apt-get -y install \
-            rpicam-apps
-    fi
-
-elif [[ "$DISTRO_ID" == "debian" && "$DISTRO_VERSION_ID" == "12" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
-        fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
-
-    if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-        sudo apt-get -y install \
-            rpicam-apps
-    fi
-
-elif [[ "$DISTRO_ID" == "raspbian" && "$DISTRO_VERSION_ID" == "11" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
-        fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
-
-    if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-        sudo apt-get -y install \
-            libcamera-apps
-    fi
-
-elif [[ "$DISTRO_ID" == "debian" && "$DISTRO_VERSION_ID" == "11" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
-        fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
-
-
-    if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-        # this can fail on armbian debian based repos
-        sudo apt-get -y install \
-            libcamera-apps || true
-    fi
-
-elif [[ "$DISTRO_ID" == "raspbian" && "$DISTRO_VERSION_ID" == "10" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    VIRTUALENV_REQ=requirements/requirements_debian10.txt
-    VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-
-
-    if [[ "$CAMERA_INTERFACE" =~ ^libcamera ]]; then
-        echo
-        echo
-        echo "libcamera is not supported in this distribution"
-        exit 1
-    fi
-
-
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
-        fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            indi-rpicam \
-            libindi-dev \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
-
-    if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-        sudo apt-get -y install \
-            libcamera-apps
-    fi
-
-elif [[ "$DISTRO_ID" == "debian" && "$DISTRO_VERSION_ID" == "10" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    VIRTUALENV_REQ=requirements/requirements_debian10.txt
-    VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-
-
-    if [[ "$CAMERA_INTERFACE" =~ ^libcamera ]]; then
-        echo
-        echo
-        echo "libcamera is not supported in this distribution"
-        exit 1
-    fi
-
-
-    INSTALL_INDI="false"
-
-    if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-        echo
-        echo
-        echo "There are not prebuilt indi packages for this distribution"
-        echo "Please run ./misc/build_indi.sh before running setup.sh"
-        echo
-        echo
-        exit 1
-    fi
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
-        fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-rpicam \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-sv305 \
-            libsv305 \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
-
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "24.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-
-    # Use Python 3.11 due to problems with Python 3.12 and pyindi-client
-    # https://github.com/indilib/pyindi-client/issues/46
-    sudo add-apt-repository -y ppa:deadsnakes/ppa
-
-    PYTHON_BIN=python3.11
-
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
-        fi
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
-        fi
-    elif [[ "$CPU_ARCH" == "armv7l" || "$CPU_ARCH" == "armv6l" ]]; then
         INSTALL_INDI="false"
 
         if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
@@ -1300,169 +532,142 @@ elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "24.04" ]]; then
             echo
             exit 1
         fi
-    fi
 
 
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3.11 \
-        python3.11-dev \
-        python3.11-venv \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
+        sudo apt-get update
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
-    fi
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libimath-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt1-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff-dev \
+            libjpeg62-turbo-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkgconf \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            polkitd \
+            dbus-user-session
 
 
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
         fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-svbony \
-            libsvbony \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
 
 
-    #if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
-    #    sudo apt-get -y install \
-    #        rpicam-apps
-    #fi
-
-
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "22.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3.11
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "armv6l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
         fi
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-sv305 \
+                libsv305 \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
         fi
-    elif [[ "$CPU_ARCH" == "armv7l" || "$CPU_ARCH" == "armv6l" ]]; then
+
+        if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
+            sudo apt-get -y install \
+                rpicam-apps
+        fi
+
+    elif [[ "$DISTRO_VERSION_ID" == "11" ]]; then
+        RSYSLOG_USER=root
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.9
+
+
+        if [ "$CPU_ARCH" == "armv6l" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
+        else
+            VIRTUALENV_REQ=requirements/requirements_debian11.txt
+        fi
+
+
         INSTALL_INDI="false"
 
         if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
@@ -1474,159 +679,147 @@ elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "22.04" ]]; then
             echo
             exit 1
         fi
-    fi
 
 
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3.11 \
-        python3.11-dev \
-        python3.11-venv \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
+        sudo apt-get update
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
-    fi
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg62-turbo-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            policykit-1 \
+            dbus-user-session
 
 
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
         fi
-    fi
-
-    if [[ "$INSTALL_INDI" == "true" ]]; then
-        sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-svbony \
-            libsvbony \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
-    fi
 
 
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "20.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3.9
-
-    if [ "$CPU_ARCH" == "armv7l" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [ "$CPU_ARCH" == "i686" ]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    elif [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "32" ]]; then
-        VIRTUALENV_REQ=requirements/requirements_latest_32.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_latest_32_post.txt
-    else
-        VIRTUALENV_REQ=requirements/requirements_latest.txt
-        VIRTUALENV_REQ_OPT=requirements/requirements_optional.txt
-        VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
-    fi
-
-
-    if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
         fi
-    elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
-        if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
-            sudo add-apt-repository -y ppa:mutlaqja/ppa
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-sv305 \
+                libsv305 \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
         fi
-    elif [[ "$CPU_ARCH" == "armv7l" || "$CPU_ARCH" == "armv6l" ]]; then
+
+
+        if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
+            # this can fail on armbian debian based repos
+            sudo apt-get -y install \
+                libcamera-apps || true
+        fi
+
+    elif [[ "$DISTRO_VERSION_ID" == "10" ]]; then
+        RSYSLOG_USER=root
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.7
+
+        VIRTUALENV_REQ=requirements/requirements_debian10.txt
+        VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+
+
+        if [[ "$CAMERA_INTERFACE" =~ ^libcamera ]]; then
+            echo
+            echo
+            echo "libcamera is not supported in this distribution"
+            exit 1
+        fi
+
+
         INSTALL_INDI="false"
 
         if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
@@ -1638,116 +831,584 @@ elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "20.04" ]]; then
             echo
             exit 1
         fi
-    fi
 
 
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3.9 \
-        python3.9-dev \
-        python3.9-venv \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        bc \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        libgpiod2 \
-        i2c-tools \
-        policykit-1 \
-        dbus-user-session
+        sudo apt-get update
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-    if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
-        if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
-            INSTALL_INDI="false"
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
         fi
+
+
+        sudo apt-get -y install \
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            policykit-1 \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
+        fi
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-rpicam \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-sv305 \
+                libsv305 \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
+        fi
+    else
+        echo "Unknown distribution $DISTRO_ID $DISTRO_VERSION_ID ($CPU_ARCH)"
+        exit 1
     fi
 
-    if [[ "$INSTALL_INDI" == "true" ]]; then
+elif [[ "$DISTRO_ID" == "ubuntu" ]]; then
+    if [[ "$DISTRO_VERSION_ID" == "24.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.12
+
+
+        if [ "$CPU_ARCH" == "armv6l" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+        elif [ "$CPU_BITS" == "32" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_32.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+        fi
+
+
+        if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        else
+            INSTALL_INDI="false"
+
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                echo
+                echo
+                echo "There are not prebuilt indi packages for this distribution"
+                echo "Please run ./misc/build_indi.sh before running setup.sh"
+                echo
+                echo
+                exit 1
+            fi
+        fi
+
+
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            indi-full \
-            libindi-dev \
-            indi-webcam \
-            indi-asi \
-            libasi \
-            indi-qhy \
-            libqhy \
-            indi-playerone \
-            libplayerone \
-            indi-svbony \
-            libsvbony \
-            libaltaircam \
-            libmallincam \
-            libmicam \
-            libnncam \
-            indi-toupbase \
-            libtoupcam \
-            indi-gphoto \
-            indi-sx \
-            indi-gpsd \
-            indi-gpsnmea
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libimath-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt1-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkgconf \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            polkitd \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
+        fi
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-svbony \
+                libsvbony \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
+        fi
+
+
+        #if [[ "$INSTALL_LIBCAMERA" == "true" ]]; then
+        #    sudo apt-get -y install \
+        #        rpicam-apps
+        #fi
+
+
+    elif [[ "$DISTRO_VERSION_ID" == "22.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.11
+
+
+        if [ "$CPU_ARCH" == "armv6l" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+        elif [ "$CPU_BITS" == "32" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_32.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_latest_post_32.txt
+        fi
+
+
+        if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        else
+            INSTALL_INDI="false"
+
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                echo
+                echo
+                echo "There are not prebuilt indi packages for this distribution"
+                echo "Please run ./misc/build_indi.sh before running setup.sh"
+                echo
+                echo
+                exit 1
+            fi
+        fi
+
+
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
+        sudo apt-get -y install \
+            build-essential \
+            python3.11 \
+            python3.11-dev \
+            python3.11-venv \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            policykit-1 \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
+        fi
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-svbony \
+                libsvbony \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
+        fi
+
+    elif [[ "$DISTRO_VERSION_ID" == "20.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.9
+
+
+        if [ "$CPU_ARCH" == "armv6l" ]; then
+            VIRTUALENV_REQ=requirements/requirements_latest_armv6l.txt
+            VIRTUALENV_REQ_POST=requirements/requirements_empty.txt
+        else
+            VIRTUALENV_REQ=requirements/requirements_debian11.txt
+        fi
+
+
+        if [[ "$CPU_ARCH" == "x86_64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        elif [[ "$CPU_ARCH" == "aarch64" && "$CPU_BITS" == "64" ]]; then
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                sudo add-apt-repository -y ppa:mutlaqja/ppa
+            fi
+        else
+            INSTALL_INDI="false"
+
+            if [[ ! -f "${INDI_DRIVER_PATH}/indiserver" && ! -f "/usr/local/bin/indiserver" ]]; then
+                echo
+                echo
+                echo "There are not prebuilt indi packages for this distribution"
+                echo "Please run ./misc/build_indi.sh before running setup.sh"
+                echo
+                echo
+                exit 1
+            fi
+        fi
+
+
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
+        sudo apt-get -y install \
+            build-essential \
+            python3.9 \
+            python3.9-dev \
+            python3.9-venv \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            bc \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            libgpiod2 \
+            i2c-tools \
+            policykit-1 \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+
+        if [[ "$INSTALL_INDI" == "true" && -f "/usr/bin/indiserver" ]]; then
+            if ! whiptail --title "indi software update" --yesno "INDI is already installed, would you like to upgrade the software?" 0 0 --defaultno; then
+                INSTALL_INDI="false"
+            fi
+        fi
+
+        if [[ "$INSTALL_INDI" == "true" ]]; then
+            sudo apt-get -y install \
+                indi-full \
+                libindi-dev \
+                indi-webcam \
+                indi-asi \
+                libasi \
+                indi-qhy \
+                libqhy \
+                indi-playerone \
+                libplayerone \
+                indi-svbony \
+                libsvbony \
+                libaltaircam \
+                libmallincam \
+                libmicam \
+                libnncam \
+                indi-toupbase \
+                libtoupcam \
+                indi-gphoto \
+                indi-sx \
+                indi-gpsd \
+                indi-gpsnmea
+        fi
+    else
+        echo "Unknown distribution $DISTRO_ID $DISTRO_VERSION_ID ($CPU_ARCH)"
+        exit 1
     fi
 
 else
@@ -1755,10 +1416,30 @@ else
     exit 1
 fi
 
-VIRTUALENV_REQ_GPIO=requirements/requirements_gpio.txt
+
+if [[ "$STELLARMATE" == "true" ]]; then
+    # nginx already installed
+    #sudo apt-get -y install \
+    #    nginx
+
+    # stellarmate does not install libindi-dev by default
+    if ! dpkg -s libindi-dev >/dev/null; then
+        sudo apt-get -y install \
+            libindi-dev
+    fi
+elif [[ "$ASTROBERRY" == "true" ]]; then
+    # nginx already installed
+    :
+else
+    sudo apt-get -y install \
+        apache2
+fi
 
 
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    #sudo systemctl start "user@${UID}.service"
+    #export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${UID}/bus"
+
     echo
     echo
     echo "The DBUS user session is not defined"
@@ -1775,10 +1456,10 @@ fi
 if systemctl -q is-enabled "${INDISERVER_SERVICE_NAME}" 2>/dev/null; then
     # system
     INSTALL_INDISERVER="false"
-elif systemctl --user -q is-enabled "${INDISERVER_SERVICE_NAME}" 2>/dev/null; then
+elif systemctl --user -q is-enabled "${INDISERVER_SERVICE_NAME}.timer" 2>/dev/null; then
     while [ -z "${INSTALL_INDISERVER:-}" ]; do
         # user
-        if whiptail --title "indiserver update" --yesno "An indiserver service is already defined, would you like to replace it?" 0 0 --defaultno; then
+        if whiptail --title "indiserver update" --yesno "An indiserver service is already defined, would you like to replace it?\n\nThis is normally not needed during an upgrade." 0 0 --defaultno; then
             INSTALL_INDISERVER="true"
         else
             INSTALL_INDISERVER="false"
@@ -1813,6 +1494,12 @@ while true; do
 done
 
 
+TMP_SPACE=$(df -Pk /tmp | tail -n 1 | awk "{ print \$4 }")
+if [ "$TMP_SPACE" -lt 500000 ]; then
+    whiptail --msgbox "There is less than 512MB available in the /tmp filesystem\n\nThis *MAY* cause python module installations to fail on new installs" 0 0 --title "WARNING"
+fi
+
+
 echo "**** Python virtualenv setup ****"
 [[ ! -d "${ALLSKY_DIRECTORY}/virtualenv" ]] && mkdir "${ALLSKY_DIRECTORY}/virtualenv"
 chmod 775 "${ALLSKY_DIRECTORY}/virtualenv"
@@ -1828,6 +1515,7 @@ fi
 if whiptail --title "GPIO Python Modules" --yesno "Would you like to install GPIO python modules? (Hardware device support)" 0 0 --defaultno; then
     GPIO_PYTHON_MODULES=true
 fi
+
 
 # shellcheck source=/dev/null
 source "${ALLSKY_DIRECTORY}/virtualenv/indi-allsky/bin/activate"
@@ -1852,9 +1540,32 @@ pip3 install "${PIP_REQ_ARGS[@]}"
 pip3 install -r "${ALLSKY_DIRECTORY}/${VIRTUALENV_REQ_POST}"
 
 
+# replace rpi.gpio module with rpi.lgpio in some cases
+if [ "${GPIO_PYTHON_MODULES}" == "true" ]; then
+    if [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "raspbian" ]]; then
+        if [[ "$DISTRO_VERSION_ID" == "12" ]]; then
+            if [[ "$CPU_ARCH" == "aarch64" || "$CPU_ARCH" == "armv7l" ]]; then
+                pip3 uninstall -y RPi.GPIO rpi.lgpio
+
+                pip3 install rpi.lgpio
+            fi
+        fi
+    elif [[ "$DISTRO_ID" == "ubuntu" ]]; then
+        if [[ "$DISTRO_VERSION_ID" == "24.04" ]]; then
+            if [[ "$CPU_ARCH" == "aarch64" || "$CPU_ARCH" == "armv7l" ]]; then
+                pip3 uninstall -y RPi.GPIO rpi.lgpio
+
+                pip3 install rpi.lgpio
+            fi
+        fi
+    fi
+fi
 
 # pyindi-client setup
 SUPPORTED_INDI_VERSIONS=(
+    "2.1.2.1"
+    "2.1.2"
+    "2.1.1"
     "2.1.0"
     "2.0.9"
     "2.0.8"
@@ -1910,21 +1621,7 @@ done
 
 
 
-if [ "$INDI_VERSION" == "2.1.0" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.9" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.8" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.7" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.6" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.5" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.4" ]; then
-    pip3 install "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.3" ]; then
+if [ "$INDI_VERSION" == "2.0.3" ]; then
     pip3 install "$PYINDI_2_0_0"
 elif [ "$INDI_VERSION" == "2.0.2" ]; then
     pip3 install "$PYINDI_2_0_0"
@@ -1939,8 +1636,8 @@ elif [ "$INDI_VERSION" == "1.9.8" ]; then
 elif [ "$INDI_VERSION" == "1.9.7" ]; then
     pip3 install "$PYINDI_1_9_8"
 else
-    # assuming skip
-    echo "Skipping pyindi-client install"
+    # default to latest release
+    pip3 install "$PYINDI_2_0_4"
 fi
 
 
@@ -2007,11 +1704,19 @@ if [ "$INSTALL_INDISERVER" == "true" ]; then
     echo
     echo
     echo "**** Setting up indiserver service ****"
+
+
+    # timer
+    cp -f "${ALLSKY_DIRECTORY}/service/${INDISERVER_SERVICE_NAME}.timer" "${HOME}/.config/systemd/user/${INDISERVER_SERVICE_NAME}.timer"
+    chmod 644 "${HOME}/.config/systemd/user/${INDISERVER_SERVICE_NAME}.timer"
+
+
     TMP1=$(mktemp)
     sed \
      -e "s|%INDI_DRIVER_PATH%|$INDI_DRIVER_PATH|g" \
      -e "s|%ALLSKY_DIRECTORY%|$ALLSKY_DIRECTORY|g" \
      -e "s|%INDISERVER_USER%|$USER|g" \
+     -e "s|%INDI_PORT%|$INDI_PORT|g" \
      -e "s|%INDI_CCD_DRIVER%|$CCD_DRIVER|g" \
      -e "s|%INDI_GPS_DRIVER%|$GPS_DRIVER|g" \
      "${ALLSKY_DIRECTORY}/service/indiserver.service" > "$TMP1"
@@ -2124,7 +1829,7 @@ sudo touch /var/log/indi-allsky/indi-allsky.log
 sudo chmod 644 /var/log/indi-allsky/indi-allsky.log
 sudo touch /var/log/indi-allsky/webapp-indi-allsky.log
 sudo chmod 644 /var/log/indi-allsky/webapp-indi-allsky.log
-sudo chown -R $RSYSLOG_USER:$RSYSLOG_GROUP /var/log/indi-allsky
+sudo chown -R "$RSYSLOG_USER":"$RSYSLOG_GROUP" /var/log/indi-allsky
 
 
 # 10 prefix so they are process before the defaults in 50
@@ -2155,7 +1860,7 @@ chmod 600 "${ALLSKY_ETC}/indi-allsky.env"
 echo "**** Flask config ****"
 
 while [ -z "${FLASK_AUTH_ALL_VIEWS:-}" ]; do
-    if whiptail --title "Web Authentication" --yesno "Do you want to require authentication for all web site views?\n\nIf \"no\", privileged actions are still protected by authentication." 0 0 --defaultno; then
+    if whiptail --title "Web Authentication" --yesno "Do you want to require authentication for all web site views?\n\nIf \"no\", privileged actions are still protected by authentication.\n\n(Hint: Most people should pick \"no\")" 0 0 --defaultno; then
         FLASK_AUTH_ALL_VIEWS="true"
     else
         FLASK_AUTH_ALL_VIEWS="false"
@@ -2273,8 +1978,10 @@ if [[ ! -d "$MIGRATION_FOLDER" ]]; then
 fi
 
 
+cd "$ALLSKY_DIRECTORY" || catch_error
 flask db revision --autogenerate
 flask db upgrade head
+cd "$OLDPWD" || catch_error
 
 
 sudo chmod 664 "${DB_FILE}"
@@ -2325,8 +2032,8 @@ if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
         sudo rm -f "$MYSQL_ETC/ssl/indi-allsky_mysql.pem"
 
         SHORT_HOSTNAME=$(hostname -s)
-        MYSQL_KEY_TMP=$(mktemp)
-        MYSQL_CRT_TMP=$(mktemp)
+        MYSQL_KEY_TMP=$(mktemp --suffix=.key)
+        MYSQL_CRT_TMP=$(mktemp --suffix=.pem)
 
         # sudo has problems with process substitution <()
         openssl req \
@@ -2480,15 +2187,14 @@ chmod 644 "${ALLSKY_ETC}/gunicorn.conf.py"
 [[ -f "$TMP_GUNICORN" ]] && rm -f "$TMP_GUNICORN"
 
 
+if [[ "$STELLARMATE" == "true" ]]; then
+    #echo "**** Disabling apache web server (Stellarmate) ****"
+    #sudo systemctl stop apache2 || true
+    #sudo systemctl disable apache2 || true
 
-if [[ "$ASTROBERRY" == "true" ]]; then
-    echo "**** Disabling apache web server (Astroberry) ****"
-    sudo systemctl stop apache2 || true
-    sudo systemctl disable apache2 || true
 
-
-    echo "**** Setup astroberry nginx ****"
-    TMP3=$(mktemp)
+    echo "**** Setup nginx ****"
+    TMP_HTTP=$(mktemp)
     sed \
      -e "s|%ALLSKY_DIRECTORY%|$ALLSKY_DIRECTORY|g" \
      -e "s|%ALLSKY_ETC%|$ALLSKY_ETC|g" \
@@ -2497,11 +2203,88 @@ if [[ "$ASTROBERRY" == "true" ]]; then
      -e "s|%HTTP_PORT%|$HTTP_PORT|g" \
      -e "s|%HTTPS_PORT%|$HTTPS_PORT|g" \
      -e "s|%UPSTREAM_SERVER%|unix:$DB_FOLDER/$GUNICORN_SERVICE_NAME.sock|g" \
-     "${ALLSKY_DIRECTORY}/service/nginx_astroberry_ssl" > "$TMP3"
+     "${ALLSKY_DIRECTORY}/service/nginx_indi-allsky.conf" > "$TMP_HTTP"
 
 
-    #sudo cp -f /etc/nginx/sites-available/astroberry_ssl "/etc/nginx/sites-available/astroberry_ssl_$(date +%Y%m%d_%H%M%S)"
-    sudo cp -f "$TMP3" /etc/nginx/sites-available/indi-allsky_ssl
+    sudo cp -f "$TMP_HTTP" /etc/nginx/sites-available/indi-allsky.conf
+    sudo chown root:root /etc/nginx/sites-available/indi-allsky.conf
+    sudo chmod 644 /etc/nginx/sites-available/indi-allsky.conf
+    sudo ln -s -f /etc/nginx/sites-available/indi-allsky.conf /etc/nginx/sites-enabled/indi-allsky.conf
+
+
+    if [[ ! -d "/etc/nginx/ssl" ]]; then
+        sudo mkdir /etc/nginx/ssl
+    fi
+
+    sudo chown root:root /etc/nginx/ssl
+    sudo chmod 755 /etc/nginx/ssl
+
+
+    if [[ ! -f "/etc/nginx/ssl/indi-allsky_nginx.key" || ! -f "/etc/nginx/ssl/indi-allsky_nginx.pem" ]]; then
+        sudo rm -f /etc/nginx/ssl/indi-allsky_nginx.key
+        sudo rm -f /etc/nginx/ssl/indi-allsky_nginx.pem
+
+        SHORT_HOSTNAME=$(hostname -s)
+        HTTP_KEY_TMP=$(mktemp --suffix=.key)
+        HTTP_CRT_TMP=$(mktemp --suffix=.pem)
+
+        # sudo has problems with process substitution <()
+        openssl req \
+            -new \
+            -newkey rsa:4096 \
+            -sha512 \
+            -days 3650 \
+            -nodes \
+            -x509 \
+            -subj "/CN=${SHORT_HOSTNAME}.local" \
+            -keyout "$HTTP_KEY_TMP" \
+            -out "$HTTP_CRT_TMP" \
+            -extensions san \
+            -config <(cat /etc/ssl/openssl.cnf <(printf "\n[req]\ndistinguished_name=req\n[san]\nsubjectAltName=DNS:%s.local,DNS:%s,DNS:localhost" "$SHORT_HOSTNAME" "$SHORT_HOSTNAME"))
+
+        sudo cp -f "$HTTP_KEY_TMP" /etc/nginx/ssl/indi-allsky_nginx.key
+        sudo cp -f "$HTTP_CRT_TMP" /etc/nginx/ssl/indi-allsky_nginx.pem
+
+        rm -f "$HTTP_KEY_TMP"
+        rm -f "$HTTP_CRT_TMP"
+    fi
+
+
+    sudo chown root:root /etc/nginx/ssl/indi-allsky_nginx.key
+    sudo chmod 600 /etc/nginx/ssl/indi-allsky_nginx.key
+    sudo chown root:root /etc/nginx/ssl/indi-allsky_nginx.pem
+    sudo chmod 644 /etc/nginx/ssl/indi-allsky_nginx.pem
+
+    # system certificate store
+    sudo cp -f /etc/nginx/ssl/indi-allsky_nginx.pem /usr/local/share/ca-certificates/indi-allsky_nginx.crt
+    sudo chown root:root /usr/local/share/ca-certificates/indi-allsky_nginx.crt
+    sudo chmod 644 /usr/local/share/ca-certificates/indi-allsky_nginx.crt
+    sudo update-ca-certificates
+
+
+    sudo systemctl enable nginx
+    sudo systemctl restart nginx
+
+elif [[ "$ASTROBERRY" == "true" ]]; then
+    #echo "**** Disabling apache web server (Astroberry) ****"
+    #sudo systemctl stop apache2 || true
+    #sudo systemctl disable apache2 || true
+
+
+    echo "**** Setup nginx ****"
+    TMP_HTTP=$(mktemp)
+    sed \
+     -e "s|%ALLSKY_DIRECTORY%|$ALLSKY_DIRECTORY|g" \
+     -e "s|%ALLSKY_ETC%|$ALLSKY_ETC|g" \
+     -e "s|%DOCROOT_FOLDER%|$DOCROOT_FOLDER|g" \
+     -e "s|%IMAGE_FOLDER%|$IMAGE_FOLDER|g" \
+     -e "s|%HTTP_PORT%|$HTTP_PORT|g" \
+     -e "s|%HTTPS_PORT%|$HTTPS_PORT|g" \
+     -e "s|%UPSTREAM_SERVER%|unix:$DB_FOLDER/$GUNICORN_SERVICE_NAME.sock|g" \
+     "${ALLSKY_DIRECTORY}/service/nginx_astroberry_ssl" > "$TMP_HTTP"
+
+
+    sudo cp -f "$TMP_HTTP" /etc/nginx/sites-available/indi-allsky_ssl
     sudo chown root:root /etc/nginx/sites-available/indi-allsky_ssl
     sudo chmod 644 /etc/nginx/sites-available/indi-allsky_ssl
     sudo ln -s -f /etc/nginx/sites-available/indi-allsky_ssl /etc/nginx/sites-enabled/indi-allsky_ssl
@@ -2521,7 +2304,7 @@ else
     fi
 
     echo "**** Start apache2 service ****"
-    TMP3=$(mktemp)
+    TMP_HTTP=$(mktemp)
     sed \
      -e "s|%ALLSKY_DIRECTORY%|$ALLSKY_DIRECTORY|g" \
      -e "s|%ALLSKY_ETC%|$ALLSKY_ETC|g" \
@@ -2529,11 +2312,11 @@ else
      -e "s|%HTTP_PORT%|$HTTP_PORT|g" \
      -e "s|%HTTPS_PORT%|$HTTPS_PORT|g" \
      -e "s|%UPSTREAM_SERVER%|unix:$DB_FOLDER/$GUNICORN_SERVICE_NAME.sock\|http://localhost/indi-allsky|g" \
-     "${ALLSKY_DIRECTORY}/service/apache_indi-allsky.conf" > "$TMP3"
+     "${ALLSKY_DIRECTORY}/service/apache_indi-allsky.conf" > "$TMP_HTTP"
 
 
     if [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "ubuntu" || "$DISTRO_ID" == "raspbian" ]]; then
-        sudo cp -f "$TMP3" /etc/apache2/sites-available/indi-allsky.conf
+        sudo cp -f "$TMP_HTTP" /etc/apache2/sites-available/indi-allsky.conf
         sudo chown root:root /etc/apache2/sites-available/indi-allsky.conf
         sudo chmod 644 /etc/apache2/sites-available/indi-allsky.conf
 
@@ -2551,8 +2334,8 @@ else
             sudo rm -f /etc/apache2/ssl/indi-allsky_apache.pem
 
             SHORT_HOSTNAME=$(hostname -s)
-            APACHE_KEY_TMP=$(mktemp)
-            APACHE_CRT_TMP=$(mktemp)
+            HTTP_KEY_TMP=$(mktemp --suffix=.key)
+            HTTP_CRT_TMP=$(mktemp --suffix=.pem)
 
             # sudo has problems with process substitution <()
             openssl req \
@@ -2563,16 +2346,16 @@ else
                 -nodes \
                 -x509 \
                 -subj "/CN=${SHORT_HOSTNAME}.local" \
-                -keyout "$APACHE_KEY_TMP" \
-                -out "$APACHE_CRT_TMP" \
+                -keyout "$HTTP_KEY_TMP" \
+                -out "$HTTP_CRT_TMP" \
                 -extensions san \
                 -config <(cat /etc/ssl/openssl.cnf <(printf "\n[req]\ndistinguished_name=req\n[san]\nsubjectAltName=DNS:%s.local,DNS:%s,DNS:localhost" "$SHORT_HOSTNAME" "$SHORT_HOSTNAME"))
 
-            sudo cp -f "$APACHE_KEY_TMP" /etc/apache2/ssl/indi-allsky_apache.key
-            sudo cp -f "$APACHE_CRT_TMP" /etc/apache2/ssl/indi-allsky_apache.pem
+            sudo cp -f "$HTTP_KEY_TMP" /etc/apache2/ssl/indi-allsky_apache.key
+            sudo cp -f "$HTTP_CRT_TMP" /etc/apache2/ssl/indi-allsky_apache.pem
 
-            rm -f "$APACHE_KEY_TMP"
-            rm -f "$APACHE_CRT_TMP"
+            rm -f "$HTTP_KEY_TMP"
+            rm -f "$HTTP_CRT_TMP"
         fi
 
 
@@ -2619,19 +2402,11 @@ else
 
         sudo systemctl enable apache2
         sudo systemctl restart apache2
-
-    elif [[ "$DISTRO_ID" == "centos" ]]; then
-        sudo cp -f "$TMP3" /etc/httpd/conf.d/indi-allsky.conf
-        sudo chown root:root /etc/httpd/conf.d/indi-allsky.conf
-        sudo chmod 644 /etc/httpd/conf.d/indi-allsky.conf
-
-        sudo systemctl enable httpd
-        sudo systemctl restart httpd
     fi
 
 fi
 
-[[ -f "$TMP3" ]] && rm -f "$TMP3"
+[[ -f "$TMP_HTTP" ]] && rm -f "$TMP_HTTP"
 
 
 # Allow web server access to mounted media
@@ -2681,17 +2456,12 @@ if [ "$MEM_TOTAL" -lt "768000" ]; then
 fi
 
 
-echo "**** Ensure user is a member of the dialout, video, i2c, spi groups ****"
-# for GPS and serial port access
-sudo usermod -a -G dialout,video "$USER"
-
-if getent group i2c >/dev/null 2>&1; then
-    sudo usermod -a -G i2c "$USER"
-fi
-
-if getent group spi >/dev/null 2>&1; then
-    sudo usermod -a -G spi "$USER"
-fi
+echo "**** Ensure user is a member of the dialout, video, gpio, i2c, spi groups ****"
+for GRP in dialout video gpio i2c spi; do
+    if getent group "$GRP" >/dev/null 2>&1; then
+        sudo usermod -a -G "$GRP" "$USER"
+    fi
+done
 
 
 echo "**** Disabling Thomas Jacquin's allsky (ignore errors) ****"
@@ -2712,6 +2482,24 @@ jq --arg camera_interface "$CAMERA_INTERFACE" '.CAMERA_INTERFACE = $camera_inter
 cat "$TMP_CAMERA_INT" > "$TMP_CONFIG_DUMP"
 
 [[ -f "$TMP_CAMERA_INT" ]] && rm -f "$TMP_CAMERA_INT"
+
+
+echo "**** Update indi port ****"
+TMP_INDI_PORT=$(mktemp --suffix=.json)
+jq --argjson indi_port "$INDI_PORT" '.INDI_PORT = $indi_port' "$TMP_CONFIG_DUMP" > "$TMP_INDI_PORT"
+
+cat "$TMP_INDI_PORT" > "$TMP_CONFIG_DUMP"
+
+[[ -f "$TMP_INDI_PORT" ]] && rm -f "$TMP_INDI_PORT"
+
+
+# final config syntax check
+json_pp < "$TMP_CONFIG_DUMP" > /dev/null
+
+
+# load all changes
+"${ALLSKY_DIRECTORY}/config.py" load -c "$TMP_CONFIG_DUMP" --force
+[[ -f "$TMP_CONFIG_DUMP" ]] && rm -f "$TMP_CONFIG_DUMP"
 
 
 # final config syntax check
@@ -2762,13 +2550,10 @@ if [ "$USER_COUNT" -le 1 ]; then
 fi
 
 
-# load all changes
-"${ALLSKY_DIRECTORY}/config.py" load -c "$TMP_CONFIG_DUMP" --force
-[[ -f "$TMP_CONFIG_DUMP" ]] && rm -f "$TMP_CONFIG_DUMP"
-
-
 if [ "$INSTALL_INDISERVER" == "true" ]; then
-    systemctl --user enable ${INDISERVER_SERVICE_NAME}.service
+    systemctl --user enable ${INDISERVER_SERVICE_NAME}.timer
+    # indiserver service is started by the timer (30 seconds after boot)
+    systemctl --user disable ${INDISERVER_SERVICE_NAME}.service
 
 
     while [ -z "${RESTART_INDISERVER:-}" ]; do
@@ -2786,6 +2571,14 @@ if [ "$INSTALL_INDISERVER" == "true" ]; then
         systemctl --user restart ${INDISERVER_SERVICE_NAME}.service
     fi
 fi
+
+
+# ensure indiserver is running
+systemctl --user start ${INDISERVER_SERVICE_NAME}.service
+
+
+# ensure latest code is active
+systemctl --user restart ${GUNICORN_SERVICE_NAME}.service
 
 
 while [ -z "${INDIALLSKY_AUTOSTART:-}" ]; do
@@ -2827,11 +2620,62 @@ if [ "$INDIALLSKY_START" == "true" ]; then
 fi
 
 
-# ensure indiserver is running
-systemctl --user start ${INDISERVER_SERVICE_NAME}.service
+while [ -z "${INDIALLSKY_SYSTEM_OPTIMIZE:-}" ]; do
+    if whiptail --title "Setup System Optimizations" --yesno "Would you like to apply some common optimizations to your system for better performance?" 0 0 --defaultno; then
+        INDIALLSKY_SYSTEM_OPTIMIZE="true"
+    else
+        INDIALLSKY_SYSTEM_OPTIMIZE="false"
+    fi
+done
 
-# ensure latest code is active
-systemctl --user restart ${GUNICORN_SERVICE_NAME}.service
+
+if [ "$INDIALLSKY_SYSTEM_OPTIMIZE" == "true" ]; then
+    echo
+    echo "Setting up optimizations..."
+
+    ### reduces unnecessary swapping
+    sudo tee /etc/sysctl.d/90-indi-allsky.conf <<EOF
+vm.swappiness = 1
+EOF
+
+    sudo sysctl --system
+
+
+    ### reduces disk i/o for system journal
+    [[ ! -d "/etc/systemd/journald.conf.d" ]] && sudo mkdir -m 755 /etc/systemd/journald.conf.d
+    sudo tee /etc/systemd/journald.conf.d/90-indi-allsky.conf <<EOF
+[Journal]
+Storage=volatile
+Compress=yes
+RateLimitIntervalSec=30s
+RateLimitBurst=10000
+SystemMaxUse=20M
+EOF
+
+    sudo systemctl restart systemd-journald
+    sleep 3
+fi
+
+
+SYSTEM_RUNLEVEL=$(systemctl get-default)
+if [ "$SYSTEM_RUNLEVEL" == "graphical.target" ]; then
+    while [ -z "${INDIALLSKY_MULTIUSER_RUNLEVEL:-}" ]; do
+        if whiptail --title "Runlevel" --yesno "The operating system is currently configured to boot using the graphical user interface.  Disabling the operating system GUI can save system resources for better performance.\n\nWould you like to disable the OS GUI Interface? (Change will be made active on next reboot)" 0 0 --defaultno; then
+            INDIALLSKY_MULTIUSER_RUNLEVEL="true"
+        else
+            INDIALLSKY_MULTIUSER_RUNLEVEL="false"
+        fi
+    done
+fi
+
+
+if [ "$INDIALLSKY_MULTIUSER_RUNLEVEL" == "true" ]; then
+    echo
+    echo "Switching to multi-user.target (runlevel 3)"
+    sudo systemctl set-default multi-user.target
+    #sudo systemctl isolate multi-user.target
+    sleep 3
+fi
 
 
 echo

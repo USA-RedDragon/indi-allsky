@@ -55,6 +55,70 @@ class CaptureWorker(Process):
     periodic_tasks_offset = 300.0  # 5 minutes
 
 
+    SENSOR_SLOTS = (
+        ['sensor_user_0', 'Camera Temp'],  # mutable
+        ['sensor_user_1', 'Dew Heater Level'],
+        ['sensor_user_2', 'Dew Point'],
+        ['sensor_user_3', 'Frost Point'],
+        ['sensor_user_4', 'Fan Level'],
+        ['sensor_user_5', 'Heat Index'],
+        ['sensor_user_6', 'Wind Dir Degrees'],
+        ['sensor_user_7', 'SQM'],
+        ['sensor_user_8', 'Future Use 8'],
+        ['sensor_user_9', 'Future Use 9'],
+        ['sensor_user_10', 'User Slot 10'],
+        ['sensor_user_11', 'User Slot 11'],
+        ['sensor_user_12', 'User Slot 12'],
+        ['sensor_user_13', 'User Slot 13'],
+        ['sensor_user_14', 'User Slot 14'],
+        ['sensor_user_15', 'User Slot 15'],
+        ['sensor_user_16', 'User Slot 16'],
+        ['sensor_user_17', 'User Slot 17'],
+        ['sensor_user_18', 'User Slot 18'],
+        ['sensor_user_19', 'User Slot 19'],
+        ['sensor_user_20', 'User Slot 20'],
+        ['sensor_user_21', 'User Slot 21'],
+        ['sensor_user_22', 'User Slot 22'],
+        ['sensor_user_23', 'User Slot 23'],
+        ['sensor_user_24', 'User Slot 24'],
+        ['sensor_user_25', 'User Slot 25'],
+        ['sensor_user_26', 'User Slot 26'],
+        ['sensor_user_27', 'User Slot 27'],
+        ['sensor_user_28', 'User Slot 28'],
+        ['sensor_user_29', 'User Slot 29'],
+        ['sensor_temp_0', 'Camera Temp'],
+        ['sensor_temp_1', 'Future Use 1'],
+        ['sensor_temp_2', 'Future Use 2'],
+        ['sensor_temp_3', 'Future Use 3'],
+        ['sensor_temp_4', 'Future Use 4'],
+        ['sensor_temp_5', 'Future Use 5'],
+        ['sensor_temp_6', 'Future Use 6'],
+        ['sensor_temp_7', 'Future Use 7'],
+        ['sensor_temp_8', 'Future Use 8'],
+        ['sensor_temp_9', 'Future Use 9'],
+        ['sensor_temp_10', 'System Temp 10'],
+        ['sensor_temp_11', 'System Temp 11'],
+        ['sensor_temp_12', 'System Temp 12'],
+        ['sensor_temp_13', 'System Temp 13'],
+        ['sensor_temp_14', 'System Temp 14'],
+        ['sensor_temp_15', 'System Temp 15'],
+        ['sensor_temp_16', 'System Temp 16'],
+        ['sensor_temp_17', 'System Temp 17'],
+        ['sensor_temp_18', 'System Temp 18'],
+        ['sensor_temp_19', 'System Temp 19'],
+        ['sensor_temp_20', 'System Temp 20'],
+        ['sensor_temp_21', 'System Temp 21'],
+        ['sensor_temp_22', 'System Temp 22'],
+        ['sensor_temp_23', 'System Temp 23'],
+        ['sensor_temp_24', 'System Temp 24'],
+        ['sensor_temp_25', 'System Temp 25'],
+        ['sensor_temp_26', 'System Temp 26'],
+        ['sensor_temp_27', 'System Temp 27'],
+        ['sensor_temp_28', 'System Temp 28'],
+        ['sensor_temp_29', 'System Temp 29'],
+    )
+
+
     def __init__(
         self,
         idx,
@@ -98,6 +162,8 @@ class CaptureWorker(Process):
 
         self._miscDb = miscDb(self.config)
         self._dateCalcs = IndiAllSkyDateCalcs(self.config, self.position_av)
+
+        self.next_forced_transition_time = None
 
         self.indiclient = None
 
@@ -204,11 +270,12 @@ class CaptureWorker(Process):
 
         self.reconfigure_camera = True  # reconfigure on first run
 
-        next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
+
+        self.next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
         logger.warning(
             'Next forced transition time: %s (%0.1fh)',
-            datetime.fromtimestamp(next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
-            (next_forced_transition_time - time.time()) / 3600,
+            datetime.fromtimestamp(self.next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
+            (self.next_forced_transition_time - time.time()) / 3600,
         )
 
 
@@ -261,12 +328,12 @@ class CaptureWorker(Process):
                     self.reconfigure_camera = True
 
                     # update transition time
-                    next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
+                    self.next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
 
                     logger.warning(
                         'Next forced transition time: %s (%0.1fh)',
-                        datetime.fromtimestamp(next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
-                        (next_forced_transition_time - loop_start_time) / 3600,
+                        datetime.fromtimestamp(self.next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
+                        (self.next_forced_transition_time - loop_start_time) / 3600,
                     )
 
 
@@ -296,7 +363,7 @@ class CaptureWorker(Process):
                     # Switch between night non-moonmode and moonmode
                     self.reconfigure_camera = True
 
-                elif loop_start_time > next_forced_transition_time:
+                elif loop_start_time > self.next_forced_transition_time:
                     # this should only happen when the sun never sets/rises
 
                     self.reconfigure_camera = True
@@ -308,11 +375,11 @@ class CaptureWorker(Process):
 
 
                     # update transition time
-                    next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
+                    self.next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
                     logger.warning(
                         'Next forced transition time: %s (%0.1fh)',
-                        datetime.fromtimestamp(next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
-                        (next_forced_transition_time - loop_start_time) / 3600,
+                        datetime.fromtimestamp(self.next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
+                        (self.next_forced_transition_time - loop_start_time) / 3600,
                     )
 
 
@@ -353,8 +420,8 @@ class CaptureWorker(Process):
 
                 #logger.warning(
                 #    'Next forced transition time: %s (%0.1fh)',
-                #    datetime.fromtimestamp(next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
-                #    (next_forced_transition_time - loop_start_time) / 3600,
+                #    datetime.fromtimestamp(self.next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
+                #    (self.next_forced_transition_time - loop_start_time) / 3600,
                 #)
 
 
@@ -547,7 +614,9 @@ class CaptureWorker(Process):
 
                         # if the image queue grows too large, introduce delays to new exposures
                         image_queue_size = self.image_q.qsize()
-                        logger.info('Image queue depth: %d', image_queue_size)
+                        if image_queue_size > 0:
+                            logger.warning('Image queue depth: %d', image_queue_size)
+
 
                         if image_queue_size <= self.image_queue_min:
                             if self.add_period_delay > 0:
@@ -816,7 +885,28 @@ class CaptureWorker(Process):
             's3_prefix'             : s3_prefix,
             'web_nonlocal_images'   : self.config.get('WEB_NONLOCAL_IMAGES', False),
             'web_local_images_admin': self.config.get('WEB_LOCAL_IMAGES_ADMIN', False),
+
+            'data'                  : {},
         }
+
+
+        self.update_sensor_slot_labels()
+
+
+        for k, v in self.SENSOR_SLOTS:
+            camera_metadata['data'][k] = v
+
+
+        camera_metadata['data']['custom_chart_1_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_1', 'sensor_user_10')
+        camera_metadata['data']['custom_chart_2_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_2', 'sensor_user_11')
+        camera_metadata['data']['custom_chart_3_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_3', 'sensor_user_12')
+        camera_metadata['data']['custom_chart_4_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_4', 'sensor_user_13')
+        camera_metadata['data']['custom_chart_5_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_5', 'sensor_user_14')
+        camera_metadata['data']['custom_chart_6_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_6', 'sensor_user_15')
+        camera_metadata['data']['custom_chart_7_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_7', 'sensor_user_16')
+        camera_metadata['data']['custom_chart_8_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_8', 'sensor_user_17')
+        camera_metadata['data']['custom_chart_9_key'] = self.config.get('CHARTS', {}).get('CUSTOM_SLOT_9', 'sensor_user_18')
+
 
 
         try:
@@ -835,6 +925,7 @@ class CaptureWorker(Process):
 
             time.sleep(60)
             raise
+
 
 
         self.camera_id = camera.id
@@ -1235,6 +1326,15 @@ class CaptureWorker(Process):
             self.reparkTelescope()
 
 
+            # update transition time
+            self.next_forced_transition_time = self._dateCalcs.getNextDayNightTransition().timestamp()
+            logger.warning(
+                'Next forced transition time: %s (%0.1fh)',
+                datetime.fromtimestamp(self.next_forced_transition_time).strftime('%Y-%m-%d %H:%M:%S'),
+                (self.next_forced_transition_time - time.time()) / 3600,
+            )
+
+
         return gps_lat, gps_long, gps_elev
 
 
@@ -1315,7 +1415,7 @@ class CaptureWorker(Process):
 
 
             if self.config['CAMERA_INTERFACE'].startswith('libcamera'):
-                libcamera_image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'dng')
+                libcamera_image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'jpg')
                 if libcamera_image_type == 'dng':
                     self.indiclient.libcamera_bit_depth = 16
                 else:
@@ -1334,7 +1434,7 @@ class CaptureWorker(Process):
 
 
             if self.config['CAMERA_INTERFACE'].startswith('libcamera'):
-                libcamera_image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'dng')
+                libcamera_image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'jpg')
                 if libcamera_image_type == 'dng':
                     self.indiclient.libcamera_bit_depth = 16
                 else:
@@ -1372,18 +1472,17 @@ class CaptureWorker(Process):
         moon.compute(obs)
 
         # Night
-        logger.info('Sun altitude: %0.1f', math.degrees(sun.alt))
         self.night = sun.alt < self.night_sun_radians  # boolean
-
 
         # Moonmode
         moon_phase = moon.moon_phase * 100.0
 
-        logger.info('Moon altitude: %0.1f, phase %0.1f%%', math.degrees(moon.alt), moon_phase)
+        logger.info('Sun alt: %0.1f, Moon alt: %0.1f, phase %0.1f%%', math.degrees(sun.alt), math.degrees(moon.alt), moon_phase)
+
         if self.night:
             if moon.alt >= self.night_moonmode_radians:
                 if moon_phase >= self.config['NIGHT_MOONMODE_PHASE']:
-                    logger.info('Moon Mode conditions detected')
+                    #logger.info('Moon Mode conditions detected')
                     self.moonmode = True
                     return
 
@@ -1647,4 +1746,97 @@ class CaptureWorker(Process):
         db.session.commit()
 
         self.video_q.put({'task_id' : task.id})
+
+
+    def update_sensor_slot_labels(self):
+        import psutil
+        from .devices import sensors as indi_allsky_sensors
+
+        temp_sensor__a_classname = self.config.get('TEMP_SENSOR', {}).get('A_CLASSNAME', '')
+        temp_sensor__a_label = self.config.get('TEMP_SENSOR', {}).get('A_LABEL', 'Sensor A')
+        temp_sensor__a_user_var_slot = self.config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 'sensor_user_10')
+        temp_sensor__b_classname = self.config.get('TEMP_SENSOR', {}).get('B_CLASSNAME', '')
+        temp_sensor__b_label = self.config.get('TEMP_SENSOR', {}).get('B_LABEL', 'Sensor B')
+        temp_sensor__b_user_var_slot = self.config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 'sensor_user_15')
+        temp_sensor__c_classname = self.config.get('TEMP_SENSOR', {}).get('C_CLASSNAME', '')
+        temp_sensor__c_label = self.config.get('TEMP_SENSOR', {}).get('C_LABEL', 'Sensor C')
+        temp_sensor__c_user_var_slot = self.config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 'sensor_user_20')
+
+
+        if temp_sensor__a_classname:
+            try:
+                temp_sensor__a_class = getattr(indi_allsky_sensors, temp_sensor__a_classname)
+                sensor_a_index = constants.SENSOR_INDEX_MAP[str(temp_sensor__a_user_var_slot)]
+
+                for x in range(temp_sensor__a_class.METADATA['count']):
+                    try:
+                        self.SENSOR_SLOTS[sensor_a_index + x][1] = '{0:s} - {1:s} - {2:s}'.format(
+                            temp_sensor__a_class.METADATA['name'],
+                            temp_sensor__a_label,
+                            temp_sensor__a_class.METADATA['labels'][x],
+                        )
+                    except IndexError:
+                        logger.error('Not enough slots for sensor values')
+                        pass
+            except AttributeError:
+                logger.error('Unknown sensor class: %s', temp_sensor__a_classname)
+
+
+        if temp_sensor__b_classname:
+            try:
+                temp_sensor__b_class = getattr(indi_allsky_sensors, temp_sensor__b_classname)
+                sensor_b_index = constants.SENSOR_INDEX_MAP[str(temp_sensor__b_user_var_slot)]
+
+                for x in range(temp_sensor__b_class.METADATA['count']):
+                    try:
+                        self.SENSOR_SLOTS[sensor_b_index + x][1] = '{0:s} - {1:s} - {2:s}'.format(
+                            temp_sensor__b_class.METADATA['name'],
+                            temp_sensor__b_label,
+                            temp_sensor__b_class.METADATA['labels'][x],
+                        )
+                    except IndexError:
+                        logger.error('Not enough slots for sensor values')
+                        pass
+            except AttributeError:
+                logger.error('Unknown sensor class: %s', temp_sensor__b_classname)
+
+
+        if temp_sensor__c_classname:
+            try:
+                temp_sensor__c_class = getattr(indi_allsky_sensors, temp_sensor__c_classname)
+                sensor_c_index = constants.SENSOR_INDEX_MAP[str(temp_sensor__c_user_var_slot)]
+
+                for x in range(temp_sensor__c_class.METADATA['count']):
+                    try:
+                        self.SENSOR_SLOTS[sensor_c_index + x][1] = '{0:s} - {1:s} - {2:s}'.format(
+                            temp_sensor__c_class.METADATA['name'],
+                            temp_sensor__c_label,
+                            temp_sensor__c_class.METADATA['labels'][x],
+                        )
+                    except IndexError:
+                        logger.error('Not enough slots for sensor values')
+                        pass
+            except AttributeError:
+                logger.error('Unknown sensor class: %s', temp_sensor__c_classname)
+
+
+        # Set system temp names
+        temp_info = psutil.sensors_temperatures()
+
+        temp_label_list = list()
+        for t_key in sorted(temp_info):  # always return the keys in the same order
+            for i, t in enumerate(temp_info[t_key]):
+                # these names will match the mqtt topics
+                if not t.label:
+                    # use index for label name
+                    label = str(i)
+                else:
+                    label = t.label
+
+                topic = '{0:s}/{1:s}'.format(t_key, label)
+                temp_label_list.append(topic)
+
+
+        for x, label in enumerate(temp_label_list[:20]):  # limit to 20
+            self.SENSOR_SLOTS[x + 40][1] = '{0:s}'.format(label)
 

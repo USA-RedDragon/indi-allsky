@@ -44,7 +44,7 @@ class IndiAllSkyConfigBase(object):
         "LENS_NAME" : "AllSky Lens",
         "LENS_FOCAL_LENGTH" : 2.5,
         "LENS_FOCAL_RATIO"  : 2.0,
-        "LENS_IMAGE_CIRCLE" : 4000,
+        "LENS_IMAGE_CIRCLE" : 3000,
         "LENS_OFFSET_X"     : 0,
         "LENS_OFFSET_Y"     : 0,
         "LENS_ALTITUDE"     : 90.0,
@@ -79,16 +79,26 @@ class IndiAllSkyConfigBase(object):
         "FOCUS_MODE"           : False,
         "FOCUS_DELAY"          : 4.0,
         "CFA_PATTERN"      : "",  # None, GRBG, RGGB, BGGR, GBRG
+        "USE_NIGHT_COLOR"  : True,
         "SCNR_ALGORITHM"   : "",  # empty string, average_neutral, or maximum_neutral
+        "SCNR_ALGORITHM_DAY" : "",
         "WBR_FACTOR"       : 1.0,
         "WBG_FACTOR"       : 1.0,
         "WBB_FACTOR"       : 1.0,
+        "WBR_FACTOR_DAY"   : 1.0,
+        "WBG_FACTOR_DAY"   : 1.0,
+        "WBB_FACTOR_DAY"   : 1.0,
         "AUTO_WB"          : False,
-        "SATURATION_FACTOR": 1.0,
+        "AUTO_WB_DAY"      : False,
+        "SATURATION_FACTOR"     : 1.0,
+        "SATURATION_FACTOR_DAY" : 1.0,
+        "GAMMA_CORRECTION"      : 1.0,
+        "GAMMA_CORRECTION_DAY"  : 1.0,
         "CCD_COOLING"      : False,
         "CCD_TEMP"         : 15.0,
-        "TEMP_DISPLAY"     : "c",  # c = celcius, f = fahrenheit, k = kelvin",
+        "TEMP_DISPLAY"     : "c",  # c = celsius, f = fahrenheit, k = kelvin",
         "PRESSURE_DISPLAY" : "hPa",  # hPa = hectoPascals/millibars, psi = psi, inHg = inches of mercury, mmHg = mm of mercury
+        "WINDSPEED_DISPLAY": "ms",  # ms = meters/s, mph = miles/hour, knots = knots, kph = km/hour
         "CCD_TEMP_SCRIPT"  : "",
         "GPS_ENABLE"       : False,
         "TARGET_ADU"         : 75,
@@ -116,6 +126,8 @@ class IndiAllSkyConfigBase(object):
             "PRE_PROCESSOR"  : "standard",
             "IMAGE_CIRCLE"   : 2000,
             "KEOGRAM_RATIO"  : 0.15,
+            "PRE_SCALE"      : 50,
+            "FFMPEG_REPORT"  : False,
         },
         "DAYTIME_CAPTURE"          : True,
         "DAYTIME_CAPTURE_SAVE"     : True,
@@ -131,7 +143,7 @@ class IndiAllSkyConfigBase(object):
         "WEB_NONLOCAL_IMAGES"      : False,
         "WEB_LOCAL_IMAGES_ADMIN"   : False,
         "WEB_EXTRA_TEXT"           : "",
-        "WEB_STATUS_TEMPLATE"      : "Status: {status:s}\nLat: {latitude:0.1f}/Long: {longitude:0.1f}\nSidereal: {sidereal_time:s}\nMode: {mode:s}\nSun: {sun_alt:0.1f}&deg; {sun_dir:s}\nMoon: {moon_alt:0.1f}&deg; {moon_dir:s}\nPhase: {moon_phase_str:s} <span data-bs-toggle=\"tooltip\" data-bs-placement=\"right\" title=\"{moon_phase:0.0f}%\">{moon_glyph:s}</span>\nSmoke: {smoke_rating:s} {smoke_rating_status}\nKp-index: {kpindex:0.2f} {kpindex_rating:s} {kpindex_trend:s} {kpindex_status:s}\nAurora: {ovation_max:d}% {ovation_max_status}",
+        "WEB_STATUS_TEMPLATE"      : "Status: {status:s}\nLat: {latitude:0.1f}/Long: {longitude:0.1f}\nSidereal: {sidereal_time:s}\nMode: {mode:s}\nNext change: {mode_next_change:s} [{mode_next_change_h:0.1f}h]\nSun: {sun_alt:0.1f}&deg; {sun_dir:s}\nMoon: {moon_alt:0.1f}&deg; {moon_dir:s}\nRise: {moon_next_rise:s} [{moon_next_rise_h:0.1f}h]\nSet: {moon_next_set:s} [{moon_next_set_h:0.1f}h]\nPhase: {moon_phase_str:s} <span data-bs-toggle=\"tooltip\" data-bs-placement=\"right\" title=\"{moon_phase:0.0f}%\">{moon_glyph:s}</span>\nSmoke: {smoke_rating:s} {smoke_rating_status}\nKp-index: {kpindex:0.2f} {kpindex_rating:s} {kpindex_trend:s} {kpindex_status:s}\nAurora: {ovation_max:d}% {ovation_max_status}",
         "HEALTHCHECK" : {
             "DISK_USAGE"     : 90.0,
             "SWAP_USAGE"     : 90.0,
@@ -153,6 +165,15 @@ class IndiAllSkyConfigBase(object):
         "KEOGRAM_CROP_TOP"      : 0,  # percent
         "KEOGRAM_CROP_BOTTOM"   : 0,  # percent
         "KEOGRAM_LABEL"         : True,
+        "LONGTERM_KEOGRAM"      : {
+            "ENABLE"        : True,
+            "OFFSET_X"      : 0,
+            "OFFSET_Y"      : 0,
+        },
+        "REALTIME_KEOGRAM" : {
+            "MAX_ENTRIES"   : 1000,
+            "SAVE_INTERVAL" : 25,
+        },
         "STARTRAILS_MAX_ADU"    : 65,
         "STARTRAILS_MASK_THOLD" : 190,
         "STARTRAILS_PIXEL_THOLD": 1.0,
@@ -180,20 +201,46 @@ class IndiAllSkyConfigBase(object):
         "IMAGE_CROP_ROI"   : [],
         "IMAGE_ROTATE"     : "",  # empty, ROTATE_90_CLOCKWISE, ROTATE_90_COUNTERCLOCKWISE, ROTATE_180
         "IMAGE_ROTATE_ANGLE" : 0,
+        "IMAGE_ROTATE_KEEP_SIZE"   : False,
+        #"IMAGE_ROTATE_WITH_OFFSET" : False,
         "IMAGE_FLIP_V"     : True,
         "IMAGE_FLIP_H"     : True,
         "IMAGE_SCALE"      : 100,
         "NIGHT_GRAYSCALE"  : False,
         "DAYTIME_GRAYSCALE": False,
         "MOON_OVERLAY" : {
-            "ENABLE"   : False,
-            "X"        : 200,
-            "Y"        : 200,
+            "ENABLE"   : True,
+            "X"        : -500,
+            "Y"        : -200,
             "SCALE"    : 0.5,
+            "DARK_SIDE_SCALE" : 0.4,
+            "FLIP_H"   : False,
+            "FLIP_V"   : False,
+        },
+        "LIGHTGRAPH_OVERLAY" : {
+            "ENABLE"        : False,
+            "GRAPH_HEIGHT"  : 30,
+            "GRAPH_BORDER"  : 3,
+            "NOW_MARKER_SIZE" : 8,
+            "Y"             : 10,
+            "OFFSET_X"      : 0,
+            "SCALE"         : 1.0,
+            "LABEL"         : True,
+            "HOUR_LINES"    : True,
+            "DAY_COLOR"     : [150, 150, 150],
+            "DUSK_COLOR"    : [200, 100, 60],
+            "NIGHT_COLOR"   : [30, 30, 30],
+            "HOUR_COLOR"    : [100, 15, 15],
+            "BORDER_COLOR"  : [1, 1, 1],
+            "NOW_COLOR"     : [120, 120, 200],
+            "FONT_COLOR"    : [150, 150, 150],
+            "OPACITY"       : 100,
+            "PIL_FONT_SIZE" : 20,
+            "OPENCV_FONT_SCALE" : 0.5,
         },
         "IMAGE_CIRCLE_MASK" : {
             "ENABLE"   : False,
-            "DIAMETER" : 1500,
+            "DIAMETER" : 3000,
             "OFFSET_X" : 0,
             "OFFSET_Y" : 0,
             "BLUR"     : 35,
@@ -275,7 +322,7 @@ class IndiAllSkyConfigBase(object):
             "CHAR_EAST"      : "E",
             "CHAR_WEST"      : "W",
             "CHAR_SOUTH"     : "S",
-            "DIAMETER"       : 4000,
+            "DIAMETER"       : 3000,
             "OFFSET_X"       : 0,
             "OFFSET_Y"       : 0,
             "OFFSET_TOP"     : 15,
@@ -294,6 +341,13 @@ class IndiAllSkyConfigBase(object):
             "AZ_OFFSET"      : 0.0,
             "RETROGRADE"     : False,
         },
+        "IMAGE_BORDER" : {
+            "TOP"       : 0,
+            "LEFT"      : 0,
+            "RIGHT"     : 0,
+            "BOTTOM"    : 0,
+            "COLOR"     : [0, 0, 0],
+        },
         "UPLOAD_WORKERS" : 2,
         "FILETRANSFER" : {
             "CLASSNAME"              : "pycurl_sftp",  # pycurl_sftp, pycurl_ftps, pycurl_ftpes, paramiko_sftp, python_ftp, python_ftpes
@@ -307,20 +361,29 @@ class IndiAllSkyConfigBase(object):
             "CONNECT_TIMEOUT"        : 10.0,
             "TIMEOUT"                : 60.0,
             "CERT_BYPASS"            : True,
-            "REMOTE_IMAGE_NAME"          : "image.{ext}",
-            "REMOTE_PANORAMA_NAME"       : "panorama.{ext}",
-            "REMOTE_IMAGE_FOLDER"        : "/home/allsky/upload/allsky",
-            "REMOTE_PANORAMA_FOLDER"     : "/home/allsky/upload/allsky",
-            "REMOTE_RAW_FOLDER"          : "/home/allsky/upload/allsky/export",
-            "REMOTE_FITS_FOLDER"         : "/home/allsky/upload/allsky/fits",
+            "ATOMIC_TRANSFERS"       : False,
+            "REMOTE_IMAGE_NAME"          : "image_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}",
+            "REMOTE_IMAGE_FOLDER"        : "/home/allsky/upload/allsky/images/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}",
+            "REMOTE_PANORAMA_NAME"       : "panorama_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}",
+            "REMOTE_PANORAMA_FOLDER"     : "/home/allsky/upload/allsky/panoramas/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}",
+            "REMOTE_RAW_NAME"            : "raw_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}",
+            "REMOTE_RAW_FOLDER"          : "/home/allsky/upload/allsky/export/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}",
+            "REMOTE_FITS_NAME"           : "image_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}.{ext}",
+            "REMOTE_FITS_FOLDER"         : "/home/allsky/upload/allsky/fits/{day_date:%Y%m%d}/{timeofday:s}/{ts:%H}",
             "REMOTE_METADATA_NAME"       : "latest_metadata.json",
             "REMOTE_METADATA_FOLDER"     : "/home/allsky/upload/allsky",
-            "REMOTE_VIDEO_FOLDER"        : "/home/allsky/upload/allsky/videos",
-            "REMOTE_MINI_VIDEO_FOLDER"   : "/home/allsky/upload/allsky/videos",
-            "REMOTE_KEOGRAM_FOLDER"      : "/home/allsky/upload/allsky/keograms",
-            "REMOTE_STARTRAIL_FOLDER"    : "/home/allsky/upload/allsky/startrails",
-            "REMOTE_STARTRAIL_VIDEO_FOLDER" : "/home/allsky/upload/allsky/videos",
-            "REMOTE_PANORAMA_VIDEO_FOLDER"  : "/home/allsky/upload/allsky/videos",
+            "REMOTE_VIDEO_NAME"          : "allsky-timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_VIDEO_FOLDER"        : "/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}",
+            "REMOTE_MINI_VIDEO_NAME"     : "allsky-minitimelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_MINI_VIDEO_FOLDER"   : "/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}",
+            "REMOTE_KEOGRAM_NAME"        : "allsky-keogram_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_KEOGRAM_FOLDER"      : "/home/allsky/upload/allsky/keograms/{day_date:%Y%m%d}",
+            "REMOTE_STARTRAIL_NAME"      : "allsky-startrail_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_STARTRAIL_FOLDER"    : "/home/allsky/upload/allsky/startrails/{day_date:%Y%m%d}",
+            "REMOTE_STARTRAIL_VIDEO_NAME": "allsky-startrail_timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_STARTRAIL_VIDEO_FOLDER" : "/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}",
+            "REMOTE_PANORAMA_VIDEO_NAME" : "allsky-panorama_timelapse_ccd{camera_id:d}_{ts:%Y%m%d_%H%M%S}_{timeofday:s}.{ext}",
+            "REMOTE_PANORAMA_VIDEO_FOLDER"  : "/home/allsky/upload/allsky/videos/{day_date:%Y%m%d}",
             "REMOTE_ENDOFNIGHT_FOLDER"   : "/home/allsky/upload/allsky",
             "UPLOAD_IMAGE"           : 0,
             "UPLOAD_PANORAMA"        : 0,
@@ -403,8 +466,8 @@ class IndiAllSkyConfigBase(object):
             "UPLOAD_PANORAMA_VIDEO"  : False,
         },
         "LIBCAMERA" : {
-            "IMAGE_FILE_TYPE"        : "dng",
-            "IMAGE_FILE_TYPE_DAY"    : "dng",
+            "IMAGE_FILE_TYPE"        : "jpg",
+            "IMAGE_FILE_TYPE_DAY"    : "jpg",
             "AWB"                    : "auto",
             "AWB_DAY"                : "auto",
             "AWB_ENABLE"             : False,
@@ -439,7 +502,8 @@ class IndiAllSkyConfigBase(object):
             "LEVEL_DEF"              : 100,
             "THOLD_ENABLE "          : False,
             "MANUAL_TARGET"          : 0.0,
-            "TEMP_USER_VAR_SLOT"     : 10,
+            "TEMP_USER_VAR_SLOT"     : "sensor_user_10",
+            "DEWPOINT_USER_VAR_SLOT" : "sensor_user_2",
             "LEVEL_LOW"              : 33,
             "LEVEL_MED"              : 66,
             "LEVEL_HIGH"             : 100,
@@ -455,13 +519,13 @@ class IndiAllSkyConfigBase(object):
             "LEVEL_DEF"              : 100,
             "THOLD_ENABLE "          : False,
             "TARGET"                 : 30.0,
-            "TEMP_USER_VAR_SLOT"     : 10,
+            "TEMP_USER_VAR_SLOT"     : "sensor_user_10",
             "LEVEL_LOW"              : 33,
             "LEVEL_MED"              : 66,
             "LEVEL_HIGH"             : 100,
-            "THOLD_DIFF_LOW"         : 0,
-            "THOLD_DIFF_MED"         : 5,
-            "THOLD_DIFF_HIGH"        : 10,
+            "THOLD_DIFF_LOW"         : -10,
+            "THOLD_DIFF_MED"         : -5,
+            "THOLD_DIFF_HIGH"        : 0,
         },
         "GENERIC_GPIO" : {
             "A_CLASSNAME"            : "",
@@ -472,22 +536,36 @@ class IndiAllSkyConfigBase(object):
             "A_CLASSNAME"            : "",
             "A_LABEL"                : "Sensor A",
             "A_PIN_1"                : "D5",
-            "A_USER_VAR_SLOT"        : 10,
+            "A_USER_VAR_SLOT"        : "sensor_user_10",
             "A_I2C_ADDRESS"          : "0x77",
             "B_CLASSNAME"            : "",
             "B_LABEL"                : "Sensor B",
             "B_PIN_1"                : "D6",
-            "B_USER_VAR_SLOT"        : 15,
+            "B_USER_VAR_SLOT"        : "sensor_user_15",
             "B_I2C_ADDRESS"          : "0x76",
             "C_CLASSNAME"            : "",
             "C_LABEL"                : "Sensor C",
             "C_PIN_1"                : "D16",
-            "C_USER_VAR_SLOT"        : 20,
+            "C_USER_VAR_SLOT"        : "sensor_user_20",
             "C_I2C_ADDRESS"          : "0x40",
             "OPENWEATHERMAP_APIKEY"  : "",
             "OPENWEATHERMAP_APIKEY_E": "",
             "WUNDERGROUND_APIKEY"    : "",
             "WUNDERGROUND_APIKEY_E"  : "",
+            "ASTROSPHERIC_APIKEY"    : "",
+            "ASTROSPHERIC_APIKEY_E"  : "",
+            "AMBIENTWEATHER_APIKEY"           : "",
+            "AMBIENTWEATHER_APIKEY_E"         : "",
+            "AMBIENTWEATHER_APPLICATIONKEY"   : "",
+            "AMBIENTWEATHER_APPLICATIONKEY_E" : "",
+            "AMBIENTWEATHER_MACADDRESS"       : "",
+            "AMBIENTWEATHER_MACADDRESS_E"     : "",
+            "ECOWITT_APIKEY"           : "",
+            "ECOWITT_APIKEY_E"         : "",
+            "ECOWITT_MACADDRESS_E"     : "",
+            "ECOWITT_APPLICATIONKEY"   : "",
+            "ECOWITT_APPLICATIONKEY_E" : "",
+            "ECOWITT_MACADDRESS"       : "",
             "MQTT_TRANSPORT"         : "tcp",  # tcp or websockets
             "MQTT_HOST"              : "localhost",
             "MQTT_PORT"              : 8883,  # 1883 = mqtt, 8883 = TLS
@@ -496,6 +574,16 @@ class IndiAllSkyConfigBase(object):
             "MQTT_PASSWORD_E"        : "",
             "MQTT_TLS"               : True,
             "MQTT_CERT_BYPASS"       : True,
+            "SHT3X_HEATER_NIGHT"     : False,
+            "SHT3X_HEATER_DAY"       : False,
+            "HTU31D_HEATER_NIGHT"    : False,
+            "HTU31D_HEATER_DAY"      : False,
+            "SHT4X_MODE_NIGHT"       : "NOHEAT_HIGHPRECISION",
+            "SHT4X_MODE_DAY"         : "NOHEAT_HIGHPRECISION",
+            "HDC302X_HEATER_NIGHT"   : "OFF",
+            "HDC302X_HEATER_DAY"     : "OFF",
+            "SI7021_HEATER_LEVEL_NIGHT" : -1,
+            "SI7021_HEATER_LEVEL_DAY"   : -1,
             "TSL2561_GAIN_NIGHT"     : 1,  # 0=1x, 1=16x
             "TSL2561_GAIN_DAY"       : 0,
             "TSL2561_INT_NIGHT"      : 1,  # 0=13.7ms, 1=101ms, 2=402ms, or 3=manual
@@ -516,10 +604,15 @@ class IndiAllSkyConfigBase(object):
             "LTR390_GAIN_DAY"        : "GAIN_1X",
         },
         "CHARTS" : {
-            "CUSTOM_SLOT_1"          : 10,
-            "CUSTOM_SLOT_2"          : 11,
-            "CUSTOM_SLOT_3"          : 12,
-            "CUSTOM_SLOT_4"          : 13,
+            "CUSTOM_SLOT_1"          : "sensor_user_10",
+            "CUSTOM_SLOT_2"          : "sensor_user_11",
+            "CUSTOM_SLOT_3"          : "sensor_user_12",
+            "CUSTOM_SLOT_4"          : "sensor_user_13",
+            "CUSTOM_SLOT_5"          : "sensor_user_14",
+            "CUSTOM_SLOT_6"          : "sensor_user_15",
+            "CUSTOM_SLOT_7"          : "sensor_user_16",
+            "CUSTOM_SLOT_8"          : "sensor_user_17",
+            "CUSTOM_SLOT_9"          : "sensor_user_18",
         },
         "ADSB" : {
             "ENABLE"                 : False,
@@ -698,6 +791,14 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
                 temp_sensor__wunderground_apikey = config.get('TEMP_SENSOR', {}).get('WUNDERGROUND_APIKEY', '')
 
 
+            temp_sensor__astrospheric_apikey_e = config.get('TEMP_SENSOR', {}).get('ASTROSPHERIC_APIKEY_E', '')
+            if temp_sensor__astrospheric_apikey_e:
+                # not catching InvalidToken
+                temp_sensor__astrospheric_apikey = f_key.decrypt(temp_sensor__astrospheric_apikey_e.encode()).decode()
+            else:
+                temp_sensor__astrospheric_apikey = config.get('TEMP_SENSOR', {}).get('ASTROSPHERIC_APIKEY', '')
+
+
             temp_sensor__mqtt_password_e = config.get('TEMP_SENSOR', {}).get('MQTT_PASSWORD_E', '')
             if temp_sensor__mqtt_password_e:
                 # not catching InvalidToken
@@ -722,6 +823,7 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
             pycurl_camera__password = config.get('PYCURL_CAMERA', {}).get('PASSWORD', '')
             temp_sensor__openweathermap_apikey = config.get('TEMP_SENSOR', {}).get('OPENWEATHERMAP_APIKEY', '')
             temp_sensor__wunderground_apikey = config.get('TEMP_SENSOR', {}).get('WUNDERGROUND_APIKEY', '')
+            temp_sensor__astrospheric_apikey = config.get('TEMP_SENSOR', {}).get('ASTROSPHERIC_APIKEY', '')
             temp_sensor__mqtt_password = config.get('TEMP_SENSOR', {}).get('MQTT_PASSWORD', '')
             adsb__password = config.get('ADSB', {}).get('PASSWORD', '')
 
@@ -740,6 +842,8 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
         config['TEMP_SENSOR']['OPENWEATHERMAP_APIKEY_E'] = ''
         config['TEMP_SENSOR']['WUNDERGROUND_APIKEY'] = temp_sensor__wunderground_apikey
         config['TEMP_SENSOR']['WUNDERGROUND_APIKEY_E'] = ''
+        config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY'] = temp_sensor__astrospheric_apikey
+        config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY_E'] = ''
         config['TEMP_SENSOR']['MQTT_PASSWORD'] = temp_sensor__mqtt_password
         config['TEMP_SENSOR']['MQTT_PASSWORD_E'] = ''
         config['ADSB']['PASSWORD'] = adsb__password
@@ -834,6 +938,15 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
                 temp_sensor__wunderground_apikey = ''
 
 
+            temp_sensor__astrospheric_apikey = str(config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY'])
+            if temp_sensor__astrospheric_apikey:
+                temp_sensor__astrospheric_apikey_e = f_key.encrypt(temp_sensor__astrospheric_apikey.encode()).decode()
+                temp_sensor__astrospheric_apikey = ''
+            else:
+                temp_sensor__astrospheric_apikey_e = ''
+                temp_sensor__astrospheric_apikey = ''
+
+
             temp_sensor__mqtt_password = str(config['TEMP_SENSOR']['MQTT_PASSWORD'])
             if temp_sensor__mqtt_password:
                 temp_sensor__mqtt_password_e = f_key.encrypt(temp_sensor__mqtt_password.encode()).decode()
@@ -869,6 +982,8 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
             temp_sensor__openweathermap_apikey_e = ''
             temp_sensor__wunderground_apikey = str(config['TEMP_SENSOR']['WUNDERGROUND_APIKEY'])
             temp_sensor__wunderground_apikey_e = ''
+            temp_sensor__astrospheric_apikey = str(config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY'])
+            temp_sensor__astrospheric_apikey_e = ''
             temp_sensor__mqtt_password = str(config['TEMP_SENSOR']['MQTT_PASSWORD'])
             temp_sensor__mqtt_password_e = ''
             adsb__password = str(config['ADSB']['PASSWORD'])
@@ -889,6 +1004,8 @@ class IndiAllSkyConfig(IndiAllSkyConfigBase):
         config['TEMP_SENSOR']['OPENWEATHERMAP_APIKEY_E'] = temp_sensor__openweathermap_apikey_e
         config['TEMP_SENSOR']['WUNDERGROUND_APIKEY'] = temp_sensor__wunderground_apikey
         config['TEMP_SENSOR']['WUNDERGROUND_APIKEY_E'] = temp_sensor__wunderground_apikey_e
+        config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY'] = temp_sensor__astrospheric_apikey
+        config['TEMP_SENSOR']['ASTROSPHERIC_APIKEY_E'] = temp_sensor__astrospheric_apikey_e
         config['TEMP_SENSOR']['MQTT_PASSWORD'] = temp_sensor__mqtt_password
         config['TEMP_SENSOR']['MQTT_PASSWORD_E'] = temp_sensor__mqtt_password_e
         config['ADSB']['PASSWORD'] = adsb__password
@@ -972,6 +1089,13 @@ class IndiAllSkyConfigUtil(IndiAllSkyConfig):
         c = json.loads(f_config.read(), object_pairs_hook=OrderedDict)
         f_config.close()
 
+
+        # check a few values to make sure this is a valid config
+        if not c.get('INDI_SERVER') or not c.get('NIGHT_SUN_ALT_DEG') or not c.get('CCD_CONFIG'):
+            logger.error('Not a valid indi-allsky config')
+            sys.exit(1)
+
+
         self.config.update(c)
 
         logger.info('Loading configuration from file')
@@ -1016,7 +1140,12 @@ class IndiAllSkyConfigUtil(IndiAllSkyConfig):
         self._config = self._decrypt_passwords()
 
         config_temp_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
-        config_temp_f.write(json.dumps(self.config, indent=4))
+        json.dump(
+            self.config,
+            config_temp_f,
+            indent=4,
+            ensure_ascii=False,
+        )
         config_temp_f.close()
 
         config_temp_p = Path(config_temp_f.name)
@@ -1093,7 +1222,7 @@ class IndiAllSkyConfigUtil(IndiAllSkyConfig):
 
         logger.info('Dumping config')
 
-        print(json.dumps(self._config, indent=4))
+        print(json.dumps(self._config, indent=4, ensure_ascii=False))
 
 
     def user_count(self, **kwargs):

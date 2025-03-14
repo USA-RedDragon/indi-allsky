@@ -30,7 +30,7 @@ class TempApiWeatherUnderground(SensorBase):
     METADATA = {
         'name' : 'Weather Underground API',
         'description' : 'Weather Underground API Sensor',
-        'count' : 8,
+        'count' : 9,
         'labels' : (
             'Temperature',
             'Relative Humidity',
@@ -40,6 +40,7 @@ class TempApiWeatherUnderground(SensorBase):
             'Total Precipitation',
             'Solar Radiation',
             'UV',
+            'Dew Point',
         ),
         'types' : (
             constants.SENSOR_TEMPERATURE,
@@ -50,6 +51,7 @@ class TempApiWeatherUnderground(SensorBase):
             constants.SENSOR_PRECIPITATION,
             constants.SENSOR_MISC,
             constants.SENSOR_MISC,
+            constants.SENSOR_TEMPERATURE,
         ),
     }
 
@@ -142,6 +144,12 @@ class TempApiWeatherUnderground(SensorBase):
             pressure_mb = 0
 
 
+        if r_data['observations'][0][units].get('dewpt'):
+            dewpt_c = float(r_data['observations'][0][units]['dewpt'])
+        else:
+            dewpt_c = 0.0
+
+
         if r_data['observations'][0].get('winddir'):
             wind_deg = int(r_data['observations'][0]['winddir'])
         else:
@@ -194,47 +202,43 @@ class TempApiWeatherUnderground(SensorBase):
         if self.config.get('TEMP_DISPLAY') == 'f':
             current_temp = self.c2f(temp_c)
             current_dp = self.c2f(dew_point_c)
+            current_dewpt = self.c2f(dewpt_c)  # api measurement
             current_fp = self.c2f(frost_point_c)
             current_hi = self.c2f(heat_index_c)
-
-            ### assume MPH if you are showing F
-            ### metric_si
-            current_wind_speed = self.mps2miph(wind_speed)
-            current_wind_gust = self.mps2miph(wind_gust)
-            ### metric
-            #current_wind_speed = self.kmph2miph(wind_speed)
-            #current_wind_gust = self.kmph2miph(wind_gust)
 
             ### assume inches if you are showing F
             current_rain = self.mm2in(rain_total)
         elif self.config.get('TEMP_DISPLAY') == 'k':
             current_temp = self.c2k(temp_c)
             current_dp = self.c2k(dew_point_c)
+            current_dewpt = self.c2k(dewpt_c)  # api measurement
             current_fp = self.c2k(frost_point_c)
             current_hi = self.c2k(heat_index_c)
-
-            ### metric_si
-            current_wind_speed = self.mps2kmph(wind_speed)
-            current_wind_gust = self.mps2kmph(wind_gust)
-            ### metric
-            #current_wind_speed = wind_speed
-            #current_wind_gust = wind_gust
 
             current_rain = rain_total
         else:
             current_temp = temp_c
             current_dp = dew_point_c
+            current_dewpt = dewpt_c  # api measurement
             current_fp = frost_point_c
             current_hi = heat_index_c
 
-            ### metric_si
+            current_rain = rain_total
+
+
+        if self.config.get('WINDSPEED_DISPLAY') == 'mph':
+            current_wind_speed = self.mps2miph(wind_speed)
+            current_wind_gust = self.mps2miph(wind_gust)
+        elif self.config.get('WINDSPEED_DISPLAY') == 'knots':
+            current_wind_speed = self.mps2knots(wind_speed)
+            current_wind_gust = self.mps2knots(wind_gust)
+        elif self.config.get('WINDSPEED_DISPLAY') == 'kph':
             current_wind_speed = self.mps2kmph(wind_speed)
             current_wind_gust = self.mps2kmph(wind_gust)
-            ### metric
-            #current_wind_speed = wind_speed
-            #current_wind_gust = wind_gust
-
-            current_rain = rain_total
+        else:
+            # ms meters/s
+            current_wind_speed = wind_speed
+            current_wind_gust = wind_gust
 
 
         if self.config.get('PRESSURE_DISPLAY') == 'psi':
@@ -261,6 +265,7 @@ class TempApiWeatherUnderground(SensorBase):
                 current_rain,
                 solar_radiation,
                 uv,
+                current_dewpt,  # api measurement
             ),
         }
 

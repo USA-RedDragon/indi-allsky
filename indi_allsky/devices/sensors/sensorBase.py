@@ -2,17 +2,54 @@ import math
 
 
 class SensorBase(object):
+
+
     def __init__(self, *args, **kwargs):
         self.config = args[0]
         self.name = args[1]
         self.night_v = args[2]
 
         self._slot = None  # var slot
+        self._night = None
+
+        self.heater_on = False  # Sensor Heater
+        self.heater_available = False
+
+        # basic hysteresis settings
+        self.rh_heater_on_level = 80.0
+        self.rh_heater_off_level = 75.0
 
 
     def update(self):
         # override in child class
         raise Exception('Not implemented')
+
+
+    @property
+    def night(self):
+        return self._night
+
+    @night.setter
+    def night(self, new_night):
+        self._night = bool(new_night)
+
+
+    @property
+    def heater_available(self):
+        return self._heater_available
+
+    @heater_available.setter
+    def heater_available(self, new_heater_available):
+        self._heater_available = bool(new_heater_available)
+
+
+    @property
+    def heater_on(self):
+        return self._heater_on
+
+    @heater_on.setter
+    def heater_on(self, new_heater_on):
+        self._heater_on = bool(new_heater_on)
 
 
     @property
@@ -25,18 +62,29 @@ class SensorBase(object):
 
 
     def c2f(self, c):
-        # celcius to fahrenheit
+        # celsius to fahrenheit
         return (c * 9.0 / 5.0) + 32
 
 
     def f2c(self, f):
-        # fahrenheit to celcius
+        # fahrenheit to celsius
         return (f - 32) * 5.0 / 9.0
 
 
     def c2k(self, c):
-        # celcius to kelvin
+        # celsius to kelvin
         return c + 273.15
+
+
+    def k2c(self, k):
+        # kelvin to celsius
+        return k - 273.15
+
+
+    def f2k(self, f):
+        # fahrenheit to kelvin
+        return (f - 32) * 5 / 9 + 273.15
+
 
 
     def hPa2psi(self, hpa):
@@ -54,6 +102,26 @@ class SensorBase(object):
         return hpa * 0.7500637554192107
 
 
+    def inHg2mb(self, inHg):
+        # inches mercurty to millibars mercury
+        return inHg * 0.029529983071445
+
+
+    def inHg2psi(self, inHg):
+        # inches mercurty to pounds/sq in
+        return inHg * 14.5037744
+
+
+    def inHg2hpa(self, inHg):
+        # inches mercurty to hectpascals
+        return inHg * 33.86389
+
+
+    def inHg2mmHg(self, inHg):
+        # inches mercury to millimeters mercury
+        return inHg * 25.400
+
+
     def mps2kmph(self, mps):
         # meters/sec to kilometers/hour
         return mps * 3.6
@@ -67,6 +135,26 @@ class SensorBase(object):
     def mps2miph(self, mps):
         # meters/sec to miles/hour
         return mps * 3.6 * 0.6213711922
+
+
+    def mps2knots(self, mps):
+        # meters/sec to knots
+        return mps * 1.9438445
+
+
+    def mph2knots(self, mph):
+        # miles/hour to knots
+        return mph * 0.8689762419
+
+
+    def mph2kph(self, mph):
+        # miles/hour to kilometers/hour
+        return mph * 1.609344
+
+
+    def mph2mps(self, mph):
+        # miles/hour to meters/second
+        return mph * 0.44704
 
 
     def mm2in(self, mm):

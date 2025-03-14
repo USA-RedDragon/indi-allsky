@@ -18,7 +18,7 @@ INDI_VERSION="${INDIALLSKY_INDI_VERSION:-}"
 #### end config ####
 
 
-PYINDI_2_0_4="git+https://github.com/indilib/pyindi-client.git@6f8fa80#egg=pyindi-client"
+PYINDI_2_0_4="git+https://github.com/indilib/pyindi-client.git@d8ad88f#egg=pyindi-client"
 PYINDI_2_0_0="git+https://github.com/indilib/pyindi-client.git@674706f#egg=pyindi-client"
 PYINDI_1_9_9="git+https://github.com/indilib/pyindi-client.git@ce808b7#egg=pyindi-client"
 PYINDI_1_9_8="git+https://github.com/indilib/pyindi-client.git@ffd939b#egg=pyindi-client"
@@ -64,11 +64,8 @@ if [ -f "/usr/local/bin/indiserver" ]; then
     #INDI_DRIVER_PATH="/usr/local/bin"
 
     echo
-    echo
     echo "Detected a custom installation of INDI in /usr/local/bin"
     echo
-    echo
-    sleep 3
 fi
 
 
@@ -84,6 +81,9 @@ sleep 10
 
 # pyindi-client setup
 SUPPORTED_INDI_VERSIONS=(
+    "2.1.2.1"
+    "2.1.2"
+    "2.1.1"
     "2.1.0"
     "2.0.9"
     "2.0.8"
@@ -129,7 +129,9 @@ while [ -z "${INDI_VERSION:-}" ]; do
     INDI_VERSION=$(whiptail --title "Installed INDI Version for pyindi-client" --nocancel --notags --radiolist "Press space to select" 0 0 0 ${INDI_VERSIONS[@]} 3>&1 1>&2 2>&3)
 done
 
-#echo "Selected: $INDI_VERSION"
+echo
+echo "Selected: $INDI_VERSION"
+sleep 3
 
 
 
@@ -140,28 +142,7 @@ START_TIME=$(date +%s)
 source "${ALLSKY_DIRECTORY}/virtualenv/indi-allsky/bin/activate"
 
 
-if [ "$INDI_VERSION" == "2.1.0" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.9" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.8" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.7" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.6" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.5" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.4" ]; then
-    pip3 uninstall -y pyindi-client
-    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
-elif [ "$INDI_VERSION" == "2.0.3" ]; then
+if [ "$INDI_VERSION" == "2.0.3" ]; then
     pip3 uninstall -y pyindi-client
     pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_0"
 elif [ "$INDI_VERSION" == "2.0.2" ]; then
@@ -183,8 +164,9 @@ elif [ "$INDI_VERSION" == "1.9.7" ]; then
     pip3 uninstall -y pyindi-client
     pip3 install --no-cache-dir --upgrade "$PYINDI_1_9_8"
 else
-    # assuming skip
-    echo "Skipping pyindi-client install"
+    # default latest release
+    pip3 uninstall -y pyindi-client
+    pip3 install --no-cache-dir --upgrade "$PYINDI_2_0_4"
 fi
 
 

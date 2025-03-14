@@ -1,31 +1,31 @@
-### This file is targeted to Raspbian/Debian 11 and Python 3.9 (armv7l)
-# https://www.piwheels.org/project/astropy/
-astropy >= 5.3.3
-# https://www.piwheels.org/project/numpy/
-numpy >= 1.22.2, < 2.0
-# https://www.piwheels.org/project/opencv-python-headless/
-opencv-python-headless <= 4.6.0.66
-# https://www.piwheels.org/project/scipy/
-# vulnerable https://www.cve.org/CVERecord?id=CVE-2023-25399
+### This file is targeted to Raspbian/Debian 12 and Python 3.10+
+# https://www.wheelodex.org/projects/astropy/
+astropy >= 6.1.0
+pyerfa >= 2.0.1.4
+# https://www.wheelodex.org/projects/numpy/
+numpy >= 2.1.0
+# https://www.wheelodex.org/projects/opencv-python-headless/
+opencv-python-headless >= 4.10.0.84
+# https://www.wheelodex.org/projects/scipy/
 scipy >= 1.11.3
-# https://www.piwheels.org/project/ccdproc/
-ccdproc
-# https://www.piwheels.org/project/scikit-image/
-scikit-image <= 0.19.3
-astroalign
-bottleneck
+# https://www.wheelodex.org/projects/ccdproc/
+ccdproc >= 2.4.2
+# https://www.wheelodex.org/projects/scikit-image/
+scikit-image >= 0.25.0
+astroalign >= 2.6.0
+bottleneck >= 1.4.0
 python-dateutil
 ephem
 skyfield
 paramiko
-# https://www.piwheels.org/project/pycurl/
+# https://www.wheelodex.org/projects/pycurl/ or https://www.piwheels.org/project/pycurl/
 pycurl
-# https://www.piwheels.org/project/Pillow/
+# https://www.wheelodex.org/projects/pillow/ or https://www.piwheels.org/project/Pillow/
 Pillow
 piexif
 imageio
 imageio-ffmpeg
-# https://www.piwheels.org/project/imagecodecs/
+# https://www.wheelodex.org/projects/imagecodecs/
 #imagecodecs
 cython
 #rawpy  # installed later
@@ -41,18 +41,18 @@ Flask-Login >= 0.6.3
 werkzeug
 is-safe-url
 certifi >= 2024.7.4
-# https://www.piwheels.org/project/cryptography/
-# 40.0.1 vulnerable https://security.snyk.io/package/pip/cryptography
-cryptography == 40.0.1
+# https://www.wheelodex.org/projects/cryptography/
+cryptography >= 43.0.1
 dbus-python
 paho-mqtt >= 2.0.0
 setuptools-rust
-# https://www.piwheels.org/project/bcrypt/
+# https://www.wheelodex.org/projects/bcrypt/
 bcrypt
 passlib[argon2] >= 1.7.4
 prettytable
 lxml
-shapely
+shapely >= 2.0.6
 requests-toolbelt
-fish2pano
+fish2pano >= 0.4.1
 pytz
+mysql-connector-python

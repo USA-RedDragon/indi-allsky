@@ -63,6 +63,7 @@ import queue
 
 from .exceptions import TimelapseException
 from .exceptions import TimeOutException
+from .exceptions import KeogramMismatchException
 
 
 app = create_app()
@@ -246,7 +247,7 @@ class VideoWorker(Process):
             timeofday = 'day'
 
 
-        if self.config['FFMPEG_CODEC'] in ['libx264', 'h264_qsv']:
+        if self.config['FFMPEG_CODEC'] in ['libx264', 'libx265', 'h264_qsv', 'h264_omx', 'h264_v4l2m2m', 'hevc_v4l2m2m']:
             video_format = 'mp4'
         elif self.config['FFMPEG_CODEC'] in ['libvpx']:
             video_format = 'webm'
@@ -259,10 +260,11 @@ class VideoWorker(Process):
         vid_folder = self._getVideoFolder(d_dayDate, camera)
 
         video_file = vid_folder.joinpath(
-            'allsky-timelapse_ccd{0:d}_{1:s}_{2:s}.{3:s}'.format(
+            'allsky-timelapse_ccd{0:d}_{1:s}_{2:s}_{3:d}.{4:s}'.format(
                 camera.id,
-                timespec,
+                d_dayDate.strftime('%Y%m%d'),
                 timeofday,
+                int(now.timestamp()),
                 video_format,
             )
         )
@@ -271,8 +273,10 @@ class VideoWorker(Process):
         try:
             # delete old video entry if it exists
             old_video_entry = IndiAllSkyDbVideoTable.query\
+                .join(IndiAllSkyDbVideoTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbVideoTable.dayDate == d_dayDate,
                         IndiAllSkyDbVideoTable.night == night,
                     )
@@ -320,6 +324,7 @@ class VideoWorker(Process):
                 func.max(IndiAllSkyDbImageTable.kpindex).label('image_max_kpindex'),
                 func.max(IndiAllSkyDbImageTable.ovation_max).label('image_max_ovation_max'),
                 func.max(IndiAllSkyDbImageTable.smoke_rating).label('image_max_smoke_rating'),
+                func.max(IndiAllSkyDbImageTable.stars).label('image_max_stars'),
                 func.avg(IndiAllSkyDbImageTable.stars).label('image_avg_stars'),
                 func.max(IndiAllSkyDbImageTable.moonphase).label('image_max_moonphase'),
                 func.avg(IndiAllSkyDbImageTable.sqm).label('image_avg_sqm'),
@@ -336,13 +341,15 @@ class VideoWorker(Process):
         try:
             max_kpindex = float(timelapse_data.image_max_kpindex)
             max_ovation_max = int(timelapse_data.image_max_ovation_max)
+            max_stars = int(timelapse_data.image_max_stars)
             avg_stars = float(timelapse_data.image_avg_stars)
             max_moonphase = float(timelapse_data.image_max_moonphase)
             avg_sqm = float(timelapse_data.image_avg_sqm)
         except TypeError:
             max_kpindex = 0.0
             max_ovation_max = 0
-            avg_stars = 0
+            max_stars = 0
+            avg_stars = 0.0
             max_moonphase = -1.0
             avg_sqm = 0.0
 
@@ -376,7 +383,7 @@ class VideoWorker(Process):
 
         video_metadata = {
             'type'          : constants.VIDEO,
-            'createDate'    : now.timestamp(),
+            'createDate'    : int(now.timestamp()),
             'utc_offset'    : now.astimezone().utcoffset().total_seconds(),
             'dayDate'       : d_dayDate.strftime('%Y%m%d'),
             'night'         : night,
@@ -389,6 +396,7 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
+            'max_stars'         : max_stars,
             'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'avg_sqm'           : avg_sqm,
@@ -403,10 +411,12 @@ class VideoWorker(Process):
 
 
         try:
-            # delete old video entry if it exists
+            # find existing keogram
             keogram_entry = IndiAllSkyDbKeogramTable.query\
+                .join(IndiAllSkyDbKeogramTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbKeogramTable.dayDate == d_dayDate,
                         IndiAllSkyDbKeogramTable.night == night,
                     )
@@ -432,12 +442,13 @@ class VideoWorker(Process):
             tg.ffmpeg_extra_options = self.config.get('FFMPEG_EXTRA_OPTIONS', '')
 
             tg.pre_processor.keogram = keogram_filename
+            tg.pre_processor.pre_scale = self.config.get('TIMELAPSE', {}).get('PRE_SCALE', 50)
 
             tg.generate(video_file, timelapse_files)
-        except TimelapseException:
-            video_entry.success = False
-            db.session.commit()
 
+            video_entry.success = True
+            db.session.commit()
+        except TimelapseException:
             self._miscDb.addNotification(
                 NotificationCategory.MEDIA,
                 'timelapse_video',
@@ -450,6 +461,7 @@ class VideoWorker(Process):
 
 
         task.setSuccess('Generated timelapse: {0:s}'.format(str(video_file)))
+
 
         ### Upload ###
         self._miscUpload.syncapi_video(video_entry, video_metadata)  # syncapi before s3
@@ -500,7 +512,7 @@ class VideoWorker(Process):
             timeofday = 'day'
 
 
-        if self.config['FFMPEG_CODEC'] in ['libx264', 'h264_qsv']:
+        if self.config['FFMPEG_CODEC'] in ['libx264', 'libx265', 'h264_qsv', 'h264_omx', 'h264_v4l2m2m', 'hevc_v4l2m2m']:
             video_format = 'mp4'
         elif self.config['FFMPEG_CODEC'] in ['libvpx']:
             video_format = 'webm'
@@ -525,11 +537,13 @@ class VideoWorker(Process):
 
         try:
             # delete old video entry if it exists
-            old_mini_video_entry = IndiAllSkyDbVideoTable.query\
+            old_mini_video_entry = IndiAllSkyDbMiniVideoTable.query\
+                .join(IndiAllSkyDbMiniVideoTable.camera)\
+                .filter(IndiAllSkyDbCameraTable.id == camera.id)\
                 .filter(
                     or_(
-                        IndiAllSkyDbVideoTable.filename == str(video_file),
-                        IndiAllSkyDbVideoTable.filename == str(video_file.relative_to(self.image_dir)),
+                        IndiAllSkyDbMiniVideoTable.filename == str(video_file),
+                        IndiAllSkyDbMiniVideoTable.filename == str(video_file.relative_to(self.image_dir)),
                     )
                 )\
                 .one()
@@ -575,6 +589,7 @@ class VideoWorker(Process):
                 func.max(IndiAllSkyDbImageTable.kpindex).label('image_max_kpindex'),
                 func.max(IndiAllSkyDbImageTable.ovation_max).label('image_max_ovation_max'),
                 func.max(IndiAllSkyDbImageTable.smoke_rating).label('image_max_smoke_rating'),
+                func.max(IndiAllSkyDbImageTable.stars).label('image_max_stars'),
                 func.avg(IndiAllSkyDbImageTable.stars).label('image_avg_stars'),
                 func.max(IndiAllSkyDbImageTable.moonphase).label('image_max_moonphase'),
                 func.avg(IndiAllSkyDbImageTable.sqm).label('image_avg_sqm'),
@@ -591,13 +606,15 @@ class VideoWorker(Process):
         try:
             max_kpindex = float(timelapse_data.image_max_kpindex)
             max_ovation_max = int(timelapse_data.image_max_ovation_max)
+            max_stars = int(timelapse_data.image_max_stars)
             avg_stars = float(timelapse_data.image_avg_stars)
             max_moonphase = float(timelapse_data.image_max_moonphase)
             avg_sqm = float(timelapse_data.image_avg_sqm)
         except TypeError:
             max_kpindex = 0.0
             max_ovation_max = 0
-            avg_stars = 0
+            max_stars = 0
+            avg_stars = 0.0
             max_moonphase = -1.0
             avg_sqm = 0.0
 
@@ -629,7 +646,7 @@ class VideoWorker(Process):
 
         mini_video_metadata = {
             'type'          : constants.MINI_VIDEO,
-            'createDate'    : now.timestamp(),
+            'createDate'    : int(now.timestamp()),
             'utc_offset'    : now.astimezone().utcoffset().total_seconds(),
             'dayDate'       : d_dayDate.strftime('%Y%m%d'),
             'targetDate'    : targetDate.timestamp(),
@@ -646,6 +663,7 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
+            'max_stars'         : max_stars,
             'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'avg_sqm'           : avg_sqm,
@@ -662,7 +680,7 @@ class VideoWorker(Process):
         mini_video_thumbnail_metadata = {
             'type'       : constants.THUMBNAIL,
             'origin'     : constants.MINI_VIDEO,
-            'createDate' : now.timestamp(),
+            'createDate' : int(now.timestamp()),
             'dayDate'    : d_dayDate.strftime('%Y%m%d'),
             'utc_offset' : now.astimezone().utcoffset().total_seconds(),
             'night'      : night,
@@ -693,10 +711,10 @@ class VideoWorker(Process):
             tg.ffmpeg_extra_options = self.config.get('FFMPEG_EXTRA_OPTIONS', '')
 
             tg.generate(video_file, timelapse_files)
-        except TimelapseException:
-            mini_video_entry.success = False
-            db.session.commit()
 
+            mini_video_entry.success = True
+            db.session.commit()
+        except TimelapseException:
             self._miscDb.addNotification(
                 NotificationCategory.MEDIA,
                 'mini_timelapse_video',
@@ -752,7 +770,7 @@ class VideoWorker(Process):
             timeofday = 'day'
 
 
-        if self.config['FFMPEG_CODEC'] in ['libx264', 'h264_qsv']:
+        if self.config['FFMPEG_CODEC'] in ['libx264', 'libx265', 'h264_qsv', 'h264_omx', 'h264_v4l2m2m', 'hevc_v4l2m2m']:
             video_format = 'mp4'
         elif self.config['FFMPEG_CODEC'] in ['libvpx']:
             video_format = 'webm'
@@ -769,10 +787,11 @@ class VideoWorker(Process):
         vid_folder = self._getVideoFolder(d_dayDate, camera)
 
         video_file = vid_folder.joinpath(
-            'allsky-panorama_timelapse_ccd{0:d}_{1:s}_{2:s}.{3:s}'.format(
+            'allsky-panorama_timelapse_ccd{0:d}_{1:s}_{2:s}_{3:d}.{4:s}'.format(
                 camera.id,
-                timespec,
+                d_dayDate.strftime('%Y%m%d'),
                 timeofday,
+                int(now.timestamp()),
                 video_format,
             )
         )
@@ -781,8 +800,10 @@ class VideoWorker(Process):
         try:
             # delete old video entry if it exists
             old_panorama_video_entry = IndiAllSkyDbPanoramaVideoTable.query\
+                .join(IndiAllSkyDbPanoramaVideoTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbPanoramaVideoTable.dayDate == d_dayDate,
                         IndiAllSkyDbPanoramaVideoTable.night == night,
                     )
@@ -830,6 +851,7 @@ class VideoWorker(Process):
                 func.max(IndiAllSkyDbImageTable.kpindex).label('image_max_kpindex'),
                 func.max(IndiAllSkyDbImageTable.ovation_max).label('image_max_ovation_max'),
                 func.max(IndiAllSkyDbImageTable.smoke_rating).label('image_max_smoke_rating'),
+                func.max(IndiAllSkyDbImageTable.stars).label('image_max_stars'),
                 func.avg(IndiAllSkyDbImageTable.stars).label('image_avg_stars'),
                 func.max(IndiAllSkyDbImageTable.moonphase).label('image_max_moonphase'),
                 func.avg(IndiAllSkyDbImageTable.sqm).label('image_avg_sqm'),
@@ -846,13 +868,15 @@ class VideoWorker(Process):
         try:
             max_kpindex = float(timelapse_data.image_max_kpindex)
             max_ovation_max = int(timelapse_data.image_max_ovation_max)
+            max_stars = int(timelapse_data.image_max_stars)
             avg_stars = float(timelapse_data.image_avg_stars)
             max_moonphase = float(timelapse_data.image_max_moonphase)
             avg_sqm = float(timelapse_data.image_avg_sqm)
         except TypeError:
             max_kpindex = 0.0
             max_ovation_max = 0
-            avg_stars = 0
+            max_stars = 0
+            avg_stars = 0.0
             max_moonphase = -1.0
             avg_sqm = 0.0
 
@@ -886,7 +910,7 @@ class VideoWorker(Process):
 
         video_metadata = {
             'type'          : constants.PANORAMA_VIDEO,
-            'createDate'    : now.timestamp(),
+            'createDate'    : int(now.timestamp()),
             'utc_offset'    : now.astimezone().utcoffset().total_seconds(),
             'dayDate'       : d_dayDate.strftime('%Y%m%d'),
             'night'         : night,
@@ -899,6 +923,7 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
+            'max_stars'         : max_stars,
             'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'avg_sqm'           : avg_sqm,
@@ -922,14 +947,14 @@ class VideoWorker(Process):
             tg.codec = codec
             tg.framerate = self.config['FFMPEG_FRAMERATE']
             tg.bitrate = self.config['FFMPEG_BITRATE']
-            tg.vf_scale = self.config.get('FFMPEG_VFSCALE', '')
+            #tg.vf_scale = self.config.get('FFMPEG_VFSCALE', '')  # no vfscale for panorama timelapse
             tg.ffmpeg_extra_options = self.config.get('FFMPEG_EXTRA_OPTIONS', '')
 
             tg.generate(video_file, timelapse_files)
-        except TimelapseException:
-            video_entry.success = False
-            db.session.commit()
 
+            video_entry.success = True
+            db.session.commit()
+        except TimelapseException:
             self._miscDb.addNotification(
                 NotificationCategory.MEDIA,
                 'timelapse_video',
@@ -978,7 +1003,7 @@ class VideoWorker(Process):
             timeofday = 'day'
 
 
-        if self.config['FFMPEG_CODEC'] in ['libx264', 'h264_qsv']:
+        if self.config['FFMPEG_CODEC'] in ['libx264', 'libx265', 'h264_qsv', 'h264_omx', 'h264_v4l2m2m', 'hevc_v4l2m2m']:
             video_format = 'mp4'
         elif self.config['FFMPEG_CODEC'] in ['libvpx']:
             video_format = 'webm'
@@ -991,28 +1016,31 @@ class VideoWorker(Process):
         vid_folder = self._getVideoFolder(d_dayDate, camera)
 
         keogram_file = vid_folder.joinpath(
-            'allsky-keogram_ccd{0:d}_{1:s}_{2:s}.{3:s}'.format(
+            'allsky-keogram_ccd{0:d}_{1:s}_{2:s}_{3:d}.{4:s}'.format(
                 camera.id,
-                timespec,
+                d_dayDate.strftime('%Y%m%d'),
                 timeofday,
+                int(now.timestamp()),
                 self.config['IMAGE_FILE_TYPE'],
             )
         )
 
         startrail_file = vid_folder.joinpath(
-            'allsky-startrail_ccd{0:d}_{1:s}_{2:s}.{3:s}'.format(
+            'allsky-startrail_ccd{0:d}_{1:s}_{2:s}_{3:d}.{4:s}'.format(
                 camera.id,
-                timespec,
+                d_dayDate.strftime('%Y%m%d'),
                 timeofday,
+                int(now.timestamp()),
                 self.config['IMAGE_FILE_TYPE'],
             )
         )
 
         startrail_video_file = vid_folder.joinpath(
-            'allsky-startrail_timelapse_ccd{0:d}_{1:s}_{2:s}.{3:s}'.format(
+            'allsky-startrail_timelapse_ccd{0:d}_{1:s}_{2:s}_{3:d}.{4:s}'.format(
                 camera.id,
-                timespec,
+                d_dayDate.strftime('%Y%m%d'),
                 timeofday,
+                int(now.timestamp()),
                 video_format,
             )
         )
@@ -1021,8 +1049,10 @@ class VideoWorker(Process):
         try:
             # delete old keogram entry if it exists
             old_keogram_entry = IndiAllSkyDbKeogramTable.query\
+                .join(IndiAllSkyDbKeogramTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbKeogramTable.dayDate == d_dayDate,
                         IndiAllSkyDbKeogramTable.night == night,
                     )
@@ -1049,8 +1079,10 @@ class VideoWorker(Process):
         try:
             # delete old star trail entry if it exists
             old_startrail_entry = IndiAllSkyDbStarTrailsTable.query\
+                .join(IndiAllSkyDbStarTrailsTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbStarTrailsTable.dayDate == d_dayDate,
                         IndiAllSkyDbStarTrailsTable.night == night,
                     )
@@ -1077,8 +1109,10 @@ class VideoWorker(Process):
         try:
             # delete old star trail video entry if it exists
             old_startrail_video_entry = IndiAllSkyDbStarTrailsVideoTable.query\
+                .join(IndiAllSkyDbStarTrailsVideoTable.camera)\
                 .filter(
                     and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
                         IndiAllSkyDbStarTrailsVideoTable.dayDate == d_dayDate,
                         IndiAllSkyDbStarTrailsVideoTable.night == night,
                     )
@@ -1135,6 +1169,7 @@ class VideoWorker(Process):
                 func.max(IndiAllSkyDbImageTable.kpindex).label('image_max_kpindex'),
                 func.max(IndiAllSkyDbImageTable.ovation_max).label('image_max_ovation_max'),
                 func.max(IndiAllSkyDbImageTable.smoke_rating).label('image_max_smoke_rating'),
+                func.max(IndiAllSkyDbImageTable.stars).label('image_max_stars'),
                 func.avg(IndiAllSkyDbImageTable.stars).label('image_avg_stars'),
                 func.max(IndiAllSkyDbImageTable.moonphase).label('image_max_moonphase'),
                 func.avg(IndiAllSkyDbImageTable.sqm).label('image_avg_sqm'),
@@ -1151,13 +1186,15 @@ class VideoWorker(Process):
         try:
             max_kpindex = float(image_data.image_max_kpindex)
             max_ovation_max = int(image_data.image_max_ovation_max)
+            max_stars = int(image_data.image_max_stars)
             avg_stars = float(image_data.image_avg_stars)
             max_moonphase = float(image_data.image_max_moonphase)
             avg_sqm = float(image_data.image_avg_sqm)
         except TypeError:
             max_kpindex = 0.0
             max_ovation_max = 0
-            avg_stars = 0
+            max_stars = 0
+            avg_stars = 0.0
             max_moonphase = -1.0
             avg_sqm = 0.0
 
@@ -1182,16 +1219,16 @@ class VideoWorker(Process):
             self.config,
             skip_frames=timelapse_skip_frames,
         )
-        kg.angle = self.config['KEOGRAM_ANGLE']
-        kg.h_scale_factor = self.config['KEOGRAM_H_SCALE']
-        kg.v_scale_factor = self.config['KEOGRAM_V_SCALE']
+        kg.angle = self.config.get('KEOGRAM_ANGLE', 0)
+        kg.h_scale_factor = self.config.get('KEOGRAM_H_SCALE', 100)
+        kg.v_scale_factor = self.config.get('KEOGRAM_V_SCALE', 33)
         kg.crop_top = self.config.get('KEOGRAM_CROP_TOP', 0)
         kg.crop_bottom = self.config.get('KEOGRAM_CROP_BOTTOM', 0)
 
 
         keogram_metadata = {
             'type'       : constants.KEOGRAM,
-            'createDate' : now.timestamp(),
+            'createDate' : int(now.timestamp()),
             'utc_offset' : now.astimezone().utcoffset().total_seconds(),
             'dayDate'    : d_dayDate.strftime('%Y%m%d'),
             'night'      : night,
@@ -1205,6 +1242,7 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
+            'max_stars'         : max_stars,
             'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'avg_sqm'           : avg_sqm,
@@ -1213,7 +1251,7 @@ class VideoWorker(Process):
 
         startrail_metadata = {
             'type'       : constants.STARTRAIL,
-            'createDate' : now.timestamp(),
+            'createDate' : int(now.timestamp()),
             'utc_offset' : now.astimezone().utcoffset().total_seconds(),
             'dayDate'    : d_dayDate.strftime('%Y%m%d'),
             'night'      : night,
@@ -1227,6 +1265,7 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
+            'max_stars'         : max_stars,
             'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'avg_sqm'           : avg_sqm,
@@ -1235,7 +1274,7 @@ class VideoWorker(Process):
 
         startrail_video_metadata = {
             'type'       : constants.STARTRAIL_VIDEO,
-            'createDate' : now.timestamp(),
+            'createDate' : int(now.timestamp()),
             'utc_offset' : now.astimezone().utcoffset().total_seconds(),
             'dayDate'    : d_dayDate.strftime('%Y%m%d'),
             'night'      : night,
@@ -1248,7 +1287,8 @@ class VideoWorker(Process):
             'max_kpindex'       : max_kpindex,
             'max_ovation_max'   : max_ovation_max,
             'max_smoke_rating'  : max_smoke_rating,
-            'max_stars'         : avg_stars,
+            'max_stars'         : max_stars,
+            'avg_stars'         : avg_stars,
             'max_moonphase'     : max_moonphase,
             'max_sqm'           : avg_sqm,
         }
@@ -1302,8 +1342,9 @@ class VideoWorker(Process):
 
         # Files are presorted from the DB
         for i, entry in enumerate(files_entries):
-            if i % 100 == 0:
-                logger.info('Processed %d of %d images', i, image_count)
+            if i % 50 == 0:
+                processing_elapsed_s = time.time() - processing_start
+                logger.info('Processed %d of %d images (%0.3fs/image)', i, image_count, processing_elapsed_s / (i + 1))
 
             image_file_p = Path(entry.getFilesystemPath())
 
@@ -1332,7 +1373,12 @@ class VideoWorker(Process):
                     continue
 
 
-            kg.processImage(image_file_p, image_data)
+            try:
+                image_ts = image_file_p.stat().st_mtime
+                kg.processImage(image_data, image_ts)
+            except KeogramMismatchException as e:
+                logger.error('Error processing keogram image: %s', str(e))
+
 
             if night:
                 if self.config.get('STARTRAILS_USE_DB_DATA', True):
@@ -1356,13 +1402,15 @@ class VideoWorker(Process):
         keogram_entry.height = keogram_height
         keogram_entry.width = keogram_width
         keogram_entry.frames = keogram_width  # one frame per line
+
+        keogram_entry.success = True
         db.session.commit()
 
 
         keogram_thumbnail_metadata = {
             'type'       : constants.THUMBNAIL,
             'origin'     : constants.KEOGRAM,
-            'createDate' : now.timestamp(),
+            'createDate' : int(now.timestamp()),
             'dayDate'    : d_dayDate.strftime('%Y%m%d'),
             'utc_offset' : now.astimezone().utcoffset().total_seconds(),
             'night'      : night,
@@ -1391,13 +1439,15 @@ class VideoWorker(Process):
             startrail_entry.height = st_height
             startrail_entry.width = st_width
             startrail_entry.frames = stg.trail_count
+
+            startrail_entry.success = True
             db.session.commit()
 
 
             startrail_thumbnail_metadata = {
                 'type'       : constants.THUMBNAIL,
                 'origin'     : constants.STARTRAIL,
-                'createDate' : now.timestamp(),
+                'createDate' : int(now.timestamp()),
                 'dayDate'    : d_dayDate.strftime('%Y%m%d'),
                 'utc_offset' : now.astimezone().utcoffset().total_seconds(),
                 'night'      : night,
@@ -1436,11 +1486,11 @@ class VideoWorker(Process):
                     st_tg.ffmpeg_extra_options = self.config.get('FFMPEG_EXTRA_OPTIONS', '')
 
                     st_tg.generate(startrail_video_file, stg.timelapse_frame_list)
+
+                    startrail_video_entry.success = True
+                    db.session.commit()
                 except TimelapseException:
                     logger.error('Failed to generate startrails timelapse')
-
-                    startrail_video_entry.success = False
-                    db.session.commit()
 
                     self._miscDb.addNotification(
                         NotificationCategory.MEDIA,
@@ -1451,6 +1501,7 @@ class VideoWorker(Process):
             else:
                 logger.error('Not enough frames to generate star trails timelapse: %d', st_frame_count)
                 startrail_video_entry = None
+
 
 
         processing_elapsed_s = time.time() - processing_start
@@ -1549,9 +1600,9 @@ class VideoWorker(Process):
 
         try:
             if math.degrees(sun.alt) < 0:
-                sun_civilDawn_date = obs.next_rising(sun, use_center=True).datetime()
+                sun_civilDawn_date = obs.next_rising(sun).datetime()
             else:
-                sun_civilDawn_date = obs.previous_rising(sun, use_center=True).datetime()
+                sun_civilDawn_date = obs.previous_rising(sun).datetime()
         except ephem.NeverUpError:
             # northern hemisphere
             sun_civilDawn_date = utcnow + timedelta(years=10)
@@ -1561,7 +1612,7 @@ class VideoWorker(Process):
 
 
         try:
-            sun_civilTwilight_date = obs.next_setting(sun, use_center=True).datetime()
+            sun_civilTwilight_date = obs.next_setting(sun).datetime()
         except ephem.AlwaysUpError:
             # northern hemisphere
             sun_civilTwilight_date = utcnow - timedelta(days=1)

@@ -878,7 +878,7 @@ class IndiClient(PyIndi.BaseClient):
         ra = float(equatorial_eod_coord[0].getValue())   # RA
         dec = float(equatorial_eod_coord[1].getValue())  # DEC
 
-        logger.info("Telescope Coord: RA %0.2f, Dec %0.2f", ra, dec)
+        #logger.info("Telescope Coord: RA %0.2f, Dec %0.2f", ra, dec)
 
         return ra, dec
 
@@ -1034,6 +1034,7 @@ class IndiClient(PyIndi.BaseClient):
             'indi_qhy_ccd',
             'indi_simulator_ccd',
             'indi_rpicam',
+            'indi_libcamera_ccd',
         ]:
             gain_ctl = self.get_control(self.ccd_device, 'CCD_GAIN', 'number')
             gain_index_dict = self.__map_indexes(gain_ctl, ['GAIN'])
@@ -1153,6 +1154,7 @@ class IndiClient(PyIndi.BaseClient):
             'indi_qhy_ccd',
             'indi_simulator_ccd',
             'indi_rpicam',
+            'indi_libcamera_ccd',
         ]:
             gain_config = {
                 "PROPERTIES" : {
@@ -1274,6 +1276,7 @@ class IndiClient(PyIndi.BaseClient):
             'indi_altair_ccd',
             'indi_simulator_ccd',
             'indi_rpicam',
+            'indi_libcamera_ccd',
             'indi_playerone_ccd',
             'indi_sx_ccd',
             'indi_v4l2_ccd',

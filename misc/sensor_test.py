@@ -17,6 +17,7 @@ from sqlalchemy.orm.exc import NoResultFound
 
 sys.path.append(str(Path(__file__).parent.absolute().parent))
 
+from indi_allsky import constants
 from indi_allsky.flask import create_app
 from indi_allsky.config import IndiAllSkyConfig
 from indi_allsky.devices import sensors as indi_allsky_sensors
@@ -93,6 +94,10 @@ class TestSensors(object):
                 logger.info('Sensor %d: %s', i, str(sensor_data))
             except SensorReadException as e:
                 logger.error('SensorReadException: {0:s}'.format(str(e)))
+            except OSError as e:
+                logger.error('Sensor OSError: {0:s}'.format(str(e)))
+            except IOError as e:
+                logger.error('Sensor IOError: {0:s}'.format(str(e)))
 
 
     def init_sensors(self):
@@ -105,13 +110,21 @@ class TestSensors(object):
             a_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('A_I2C_ADDRESS', '0x77')
             a_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('A_PIN_1', 'notdefined')
 
-            self.sensors[0] = a_sensor(
-                self.config,
-                a_sensor_label,
-                self.night_v,
-                pin_1_name=a_sensor_pin_1_name,
-                i2c_address=a_sensor_i2c_address,
-            )
+            try:
+                self.sensors[0] = a_sensor(
+                    self.config,
+                    a_sensor_label,
+                    self.night_v,
+                    pin_1_name=a_sensor_pin_1_name,
+                    i2c_address=a_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[0] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor A',
+                    self.night_v,
+                )
         else:
             logger.warning('No sensor A - Initializing sensor simulator')
             self.sensors[0] = indi_allsky_sensors.sensor_simulator(
@@ -120,7 +133,8 @@ class TestSensors(object):
                 self.night_v,
             )
 
-        self.sensors[0].slot = self.config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 10)
+        sensor_0_key = self.config.get('TEMP_SENSOR', {}).get('A_USER_VAR_SLOT', 'sensor_user_10')
+        self.sensors[0].slot = constants.SENSOR_INDEX_MAP[sensor_0_key]
 
 
         ### Sensor B
@@ -132,13 +146,21 @@ class TestSensors(object):
             b_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('B_I2C_ADDRESS', '0x76')
             b_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('B_PIN_1', 'notdefined')
 
-            self.sensors[1] = b_sensor(
-                self.config,
-                b_sensor_label,
-                self.night_v,
-                pin_1_name=b_sensor_pin_1_name,
-                i2c_address=b_sensor_i2c_address,
-            )
+            try:
+                self.sensors[1] = b_sensor(
+                    self.config,
+                    b_sensor_label,
+                    self.night_v,
+                    pin_1_name=b_sensor_pin_1_name,
+                    i2c_address=b_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[1] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor B',
+                    self.night_v,
+                )
         else:
             logger.warning('No sensor B - Initializing sensor simulator')
             self.sensors[1] = indi_allsky_sensors.sensor_simulator(
@@ -147,7 +169,8 @@ class TestSensors(object):
                 self.night_v,
             )
 
-        self.sensors[1].slot = self.config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 15)
+        sensor_1_key = self.config.get('TEMP_SENSOR', {}).get('B_USER_VAR_SLOT', 'sensor_user_15')
+        self.sensors[1].slot = constants.SENSOR_INDEX_MAP[sensor_1_key]
 
 
         ### Sensor C
@@ -159,13 +182,21 @@ class TestSensors(object):
             c_sensor_i2c_address = self.config.get('TEMP_SENSOR', {}).get('C_I2C_ADDRESS', '0x40')
             c_sensor_pin_1_name = self.config.get('TEMP_SENSOR', {}).get('C_PIN_1', 'notdefined')
 
-            self.sensors[2] = c_sensor(
-                self.config,
-                c_sensor_label,
-                self.night_v,
-                pin_1_name=c_sensor_pin_1_name,
-                i2c_address=c_sensor_i2c_address,
-            )
+            try:
+                self.sensors[2] = c_sensor(
+                    self.config,
+                    c_sensor_label,
+                    self.night_v,
+                    pin_1_name=c_sensor_pin_1_name,
+                    i2c_address=c_sensor_i2c_address,
+                )
+            except (OSError, ValueError) as e:
+                logger.error('Error initializing sensor: %s', str(e))
+                self.sensors[2] = indi_allsky_sensors.sensor_simulator(
+                    self.config,
+                    'Sensor C',
+                    self.night_v,
+                )
         else:
             logger.warning('No sensor C - Initializing sensor simulator')
             self.sensors[2] = indi_allsky_sensors.sensor_simulator(
@@ -174,7 +205,8 @@ class TestSensors(object):
                 self.night_v,
             )
 
-        self.sensors[2].slot = self.config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 15)
+        sensor_2_key = self.config.get('TEMP_SENSOR', {}).get('C_USER_VAR_SLOT', 'sensor_user_20')
+        self.sensors[2].slot = constants.SENSOR_INDEX_MAP[sensor_2_key]
 
 
 if __name__ == "__main__":

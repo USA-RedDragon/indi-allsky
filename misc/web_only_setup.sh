@@ -22,6 +22,8 @@ DB_FILE="${DB_FOLDER}/indi-allsky.sqlite"
 SQLALCHEMY_DATABASE_URI="sqlite:///${DB_FILE}"
 MIGRATION_FOLDER="$DB_FOLDER/migrations"
 
+OS_PACKAGE_UPGRADE="${INDI_ALLSKY_OS_PACKAGE_UPGRADE:-}"
+
 # mysql support is not ready
 USE_MYSQL_DATABASE="${INDIALLSKY_USE_MYSQL_DATABASE:-false}"
 
@@ -97,9 +99,18 @@ MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk "{print \$2}")
 PGRP=$(id -ng)
 
 
-echo "###############################################"
-echo "### Welcome to the indi-allsky setup script ###"
-echo "###############################################"
+if which whiptail >/dev/null 2>&1; then
+    ### whiptail might not be installed on first run
+    WHIPTAIL_BIN=$(which whiptail)
+
+    ### testing
+    #WHIPTAIL_BIN=""
+fi
+
+
+echo "###################################################"
+echo "### Welcome to the indi-allsky web setup script ###"
+echo "###################################################"
 
 
 if [[ -n "${VIRTUAL_ENV:-}" ]]; then
@@ -118,6 +129,22 @@ if systemctl --user -q is-active "${ALLSKY_SERVICE_NAME}" >/dev/null 2>&1; then
     echo "WARNING: indi-allsky is running.  It is recommended to stop the service before running this script."
     echo
     sleep 5
+fi
+
+
+if [[ "$(id -u)" == "0" ]]; then
+    echo "Please do not run $(basename "$0") as root"
+    echo "Re-run this script as the user which will execute the indi-allsky software"
+    echo
+    echo
+    exit 1
+fi
+
+
+if [ -n "${WHIPTAIL_BIN:-}" ]; then
+    "$WHIPTAIL_BIN" \
+        --title "Welcome to indi-allsky" \
+        --msgbox "*** Welcome to the indi-allsky web setup script ***\n\nDistribution: $DISTRO_ID\nRelease: $DISTRO_VERSION_ID\nArch: $CPU_ARCH\nBits: $CPU_BITS\n\nCPUs: $CPU_TOTAL\nMemory: $MEM_TOTAL kB\n\nHTTP Port: $HTTP_PORT\nHTTPS Port: $HTTPS_PORT" 0 0
 fi
 
 
@@ -140,14 +167,6 @@ echo "HTTP_PORT: $HTTP_PORT"
 echo "HTTPS_PORT: $HTTPS_PORT"
 echo
 echo
-
-if [[ "$(id -u)" == "0" ]]; then
-    echo "Please do not run $(basename "$0") as root"
-    echo "Re-run this script as the user which will execute the indi-allsky software"
-    echo
-    echo
-    exit 1
-fi
 
 if ! ping -c 1 "$(hostname -s)" >/dev/null 2>&1; then
     echo "To avoid the benign warnings 'Name or service not known sudo: unable to resolve host'"
@@ -173,592 +192,493 @@ sudo find "$(dirname "$0")" -type d ! -perm -555 -exec chmod ugo+rx {} \;
 sudo find "$(dirname "$0")" -type f ! -perm -444 -exec chmod ugo+r {} \;
 
 
+while [ -z "${OS_PACKAGE_UPGRADE:-}" ]; do
+    if [ -n "${WHIPTAIL_BIN:-}" ]; then
+        if "$WHIPTAIL_BIN" --title "Upgrade system packages" --yesno "Would you like to upgrade all of the system packages to the latest versions?" 0 0 --defaultno; then
+            OS_PACKAGE_UPGRADE="true"
+        else
+            OS_PACKAGE_UPGRADE="false"
+        fi
+    else
+        echo
+        echo
+        echo "Would you like to upgrade all of the system packages to the latest versions? "
+        PS3="? "
+        select package_upgrade in no yes ; do
+            if [ "${package_upgrade:-}" == "yes" ]; then
+                OS_PACKAGE_UPGRADE="true"
+                break
+            else
+                OS_PACKAGE_UPGRADE="false"
+                break
+            fi
+        done
+    fi
+done
+
 
 echo "**** Installing packages... ****"
-if [[ "$DISTRO_ID" == "raspbian" && "$DISTRO_VERSION_ID" == "12" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
+if [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "raspbian" ]]; then
+    if [[ "$DISTRO_VERSION_ID" == "12" ]]; then
+        RSYSLOG_USER=root
+        RSYSLOG_GROUP=adm
 
-    MYSQL_ETC="/etc/mysql"
+        MYSQL_ETC="/etc/mysql"
 
-    PYTHON_BIN=python3
+        PYTHON_BIN=python3.11
 
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
+        VIRTUALENV_REQ=requirements/requirements_latest_web.txt
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            apache2 \
+            swig \
+            libatlas-base-dev \
+            libimath-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt1-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff-dev \
+            libjpeg62-turbo-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkgconf \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            polkitd \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+    elif [[ "$DISTRO_VERSION_ID" == "11" ]]; then
+        RSYSLOG_USER=root
+        RSYSLOG_GROUP=adm
+
+        MYSQL_ETC="/etc/mysql"
+
+        PYTHON_BIN=python3.9
+
+        VIRTUALENV_REQ=requirements/requirements_debian11_web.txt
+
+
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
+        sudo apt-get -y install \
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            apache2 \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg62-turbo-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            policykit-1 \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+    else
+        echo "Unknown distribution $DISTRO_ID $DISTRO_VERSION_ID ($CPU_ARCH)"
+        exit 1
     fi
 
+elif [[ "$DISTRO_ID" == "ubuntu" ]]; then
+    if [[ "$DISTRO_VERSION_ID" == "24.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
 
-elif [[ "$DISTRO_ID" == "debian" && "$DISTRO_VERSION_ID" == "12" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
+        MYSQL_ETC="/etc/mysql"
 
-    MYSQL_ETC="/etc/mysql"
+        PYTHON_BIN=python3.12
 
-    PYTHON_BIN=python3
-
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
+        VIRTUALENV_REQ=requirements/requirements_latest_web.txt
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
-    fi
+            build-essential \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            apache2 \
+            swig \
+            libatlas-base-dev \
+            libimath-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt1-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkgconf \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            polkitd \
+            dbus-user-session
 
 
-elif [[ "$DISTRO_ID" == "raspbian" && "$DISTRO_VERSION_ID" == "11" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
 
-    MYSQL_ETC="/etc/mysql"
+    elif [[ "$DISTRO_VERSION_ID" == "22.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
 
-    PYTHON_BIN=python3
+        MYSQL_ETC="/etc/mysql"
 
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
+        PYTHON_BIN=python3.11
 
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
+        VIRTUALENV_REQ=requirements/requirements_latest_web.txt
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
-    fi
+            build-essential \
+            python3.11 \
+            python3.11-dev \
+            python3.11-venv \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            apache2 \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            policykit-1 \
+            dbus-user-session
 
 
-elif [[ "$DISTRO_ID" == "debian" && "$DISTRO_VERSION_ID" == "11" ]]; then
-    RSYSLOG_USER=root
-    RSYSLOG_GROUP=adm
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
 
-    MYSQL_ETC="/etc/mysql"
+    elif [[ "$DISTRO_VERSION_ID" == "20.04" ]]; then
+        RSYSLOG_USER=syslog
+        RSYSLOG_GROUP=adm
 
-    PYTHON_BIN=python3
+        MYSQL_ETC="/etc/mysql"
 
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
+        PYTHON_BIN=python3.9
 
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg62-turbo-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
+        VIRTUALENV_REQ=requirements/requirements_debian11_web.txt
 
 
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+        sudo apt-get update
+
+
+        if [ "$OS_PACKAGE_UPGRADE" == "true" ]; then
+            sudo apt-get -y dist-upgrade
+        fi
+
+
         sudo apt-get -y install \
-            mariadb-server
+            build-essential \
+            python3.9 \
+            python3.9-dev \
+            python3.9-venv \
+            python3 \
+            python3-dev \
+            python3-venv \
+            python3-pip \
+            virtualenv \
+            cmake \
+            gfortran \
+            whiptail \
+            procps \
+            rsyslog \
+            cron \
+            git \
+            cpio \
+            tzdata \
+            ca-certificates \
+            avahi-daemon \
+            apache2 \
+            swig \
+            libatlas-base-dev \
+            libilmbase-dev \
+            libopenexr-dev \
+            libgtk-3-0 \
+            libssl-dev \
+            libxml2-dev \
+            libxslt-dev \
+            libgnutls28-dev \
+            libcurl4-gnutls-dev \
+            libcfitsio-dev \
+            libnova-dev \
+            libdbus-1-dev \
+            libglib2.0-dev \
+            libffi-dev \
+            libopencv-dev \
+            libopenblas-dev \
+            libraw-dev \
+            libgeos-dev \
+            libtiff5-dev \
+            libjpeg8-dev \
+            libopenjp2-7-dev \
+            libpng-dev \
+            zlib1g-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libcap-dev \
+            tcl8.6-dev \
+            tk8.6-dev \
+            python3-tk \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libxcb1-dev \
+            default-libmysqlclient-dev \
+            pkg-config \
+            rustc \
+            cargo \
+            ffmpeg \
+            gifsicle \
+            jq \
+            sqlite3 \
+            policykit-1 \
+            dbus-user-session
+
+
+        if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
+            sudo apt-get -y install \
+                mariadb-server
+        fi
+
+    else
+        echo "Unknown distribution $DISTRO_ID $DISTRO_VERSION_ID ($CPU_ARCH)"
+        exit 1
     fi
-
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "24.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3
-
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "22.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3.11
-
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3.11 \
-        python3.11-dev \
-        python3.11-venv \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
-
-elif [[ "$DISTRO_ID" == "ubuntu" && "$DISTRO_VERSION_ID" == "20.04" ]]; then
-    RSYSLOG_USER=syslog
-    RSYSLOG_GROUP=adm
-
-    MYSQL_ETC="/etc/mysql"
-
-    PYTHON_BIN=python3.9
-
-    VIRTUALENV_REQ=requirements/requirements_latest_web.txt
-
-
-    sudo apt-get update
-    sudo apt-get -y install \
-        build-essential \
-        python3.9 \
-        python3.9-dev \
-        python3.9-venv \
-        python3 \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        virtualenv \
-        cmake \
-        gfortran \
-        whiptail \
-        procps \
-        rsyslog \
-        cron \
-        git \
-        cpio \
-        tzdata \
-        ca-certificates \
-        avahi-daemon \
-        apache2 \
-        swig \
-        libatlas-base-dev \
-        libilmbase-dev \
-        libopenexr-dev \
-        libgtk-3-0 \
-        libssl-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libgnutls28-dev \
-        libcurl4-gnutls-dev \
-        libcfitsio-dev \
-        libnova-dev \
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libffi-dev \
-        libopencv-dev \
-        libopenblas-dev \
-        libraw-dev \
-        libgeos-dev \
-        libtiff5-dev \
-        libjpeg8-dev \
-        libopenjp2-7-dev \
-        libpng-dev \
-        zlib1g-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libwebp-dev \
-        libcap-dev \
-        tcl8.6-dev \
-        tk8.6-dev \
-        python3-tk \
-        libharfbuzz-dev \
-        libfribidi-dev \
-        libxcb1-dev \
-        default-libmysqlclient-dev \
-        pkg-config \
-        rustc \
-        cargo \
-        ffmpeg \
-        gifsicle \
-        jq \
-        sqlite3 \
-        policykit-1 \
-        dbus-user-session
-
-
-    if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
-        sudo apt-get -y install \
-            mariadb-server
-    fi
-
 
 else
     echo "Unknown distribution $DISTRO_ID $DISTRO_VERSION_ID ($CPU_ARCH)"
@@ -802,6 +722,12 @@ while true; do
 
     PARENT_DIR=$(dirname "$PARENT_DIR")
 done
+
+
+TMP_SPACE=$(df -Pk /tmp | tail -n 1 | awk "{ print \$4 }")
+if [ "$TMP_SPACE" -lt 500000 ]; then
+    whiptail --msgbox "There is less than 512MB available in the /tmp filesystem\n\nThis *MAY* cause python module installations to fail on new installs" 0 0 --title "WARNING"
+fi
 
 
 echo "**** Python virtualenv setup ****"
@@ -863,7 +789,7 @@ echo "**** Setup rsyslog logging ****"
 sudo chmod 755 /var/log/indi-allsky
 sudo touch /var/log/indi-allsky/webapp-indi-allsky.log
 sudo chmod 644 /var/log/indi-allsky/webapp-indi-allsky.log
-sudo chown -R $RSYSLOG_USER:$RSYSLOG_GROUP /var/log/indi-allsky
+sudo chown -R "$RSYSLOG_USER":"$RSYSLOG_GROUP" /var/log/indi-allsky
 
 
 # 10 prefix so they are process before the defaults in 50
@@ -1010,8 +936,10 @@ if [[ ! -d "$MIGRATION_FOLDER" ]]; then
 fi
 
 
+cd "$ALLSKY_DIRECTORY" || catch_error
 flask db revision --autogenerate
 flask db upgrade head
+cd "$OLDPWD" || catch_error
 
 
 sudo chmod 664 "${DB_FILE}"
@@ -1042,8 +970,8 @@ if [[ "$USE_MYSQL_DATABASE" == "true" ]]; then
         sudo rm -f "$MYSQL_ETC/ssl/indi-allsky_mysql.pem"
 
         SHORT_HOSTNAME=$(hostname -s)
-        MYSQL_KEY_TMP=$(mktemp)
-        MYSQL_CRT_TMP=$(mktemp)
+        MYSQL_KEY_TMP=$(mktemp --suffix=.key)
+        MYSQL_CRT_TMP=$(mktemp --suffix=.pem)
 
         # sudo has problems with process substitution <()
         openssl req \
@@ -1160,8 +1088,8 @@ chmod 644 "${ALLSKY_ETC}/gunicorn.conf.py"
             sudo rm -f /etc/apache2/ssl/indi-allsky_apache.pem
 
             SHORT_HOSTNAME=$(hostname -s)
-            APACHE_KEY_TMP=$(mktemp)
-            APACHE_CRT_TMP=$(mktemp)
+            APACHE_KEY_TMP=$(mktemp --suffix=.key)
+            APACHE_CRT_TMP=$(mktemp --suffix=.pem)
 
             # sudo has problems with process substitution <()
             openssl req \
@@ -1228,14 +1156,6 @@ chmod 644 "${ALLSKY_ETC}/gunicorn.conf.py"
 
         sudo systemctl enable apache2
         sudo systemctl restart apache2
-
-    elif [[ "$DISTRO_ID" == "centos" ]]; then
-        sudo cp -f "$TMP3" /etc/httpd/conf.d/indi-allsky.conf
-        sudo chown root:root /etc/httpd/conf.d/indi-allsky.conf
-        sudo chmod 644 /etc/httpd/conf.d/indi-allsky.conf
-
-        sudo systemctl enable httpd
-        sudo systemctl restart httpd
     fi
 
 

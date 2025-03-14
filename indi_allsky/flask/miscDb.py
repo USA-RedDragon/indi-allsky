@@ -28,6 +28,7 @@ from .models import IndiAllSkyDbRawImageTable
 from .models import IndiAllSkyDbPanoramaImageTable
 from .models import IndiAllSkyDbPanoramaVideoTable
 from .models import IndiAllSkyDbThumbnailTable
+from .models import IndiAllSkyDbLongTermKeogramTable
 from .models import IndiAllSkyDbNotificationTable
 from .models import IndiAllSkyDbStateTable
 
@@ -96,6 +97,7 @@ class miscDb(object):
             's3_key',
             'remote_url',
             'file_size',
+            'data',  # manually handle data
             #'sync_id',
             #'friendlyName',
         ]
@@ -106,6 +108,19 @@ class miscDb(object):
                 continue
 
             setattr(camera, k, v)
+
+
+        if camera.data:
+            camera_data = dict(camera.data)
+        else:
+            camera_data = dict()
+
+
+        # update entries
+        for k, v in metadata.get('data', {}).items():
+            camera_data[k] = v
+
+        camera.data = camera_data
 
 
         db.session.commit()
@@ -129,7 +144,7 @@ class miscDb(object):
                 name=metadata['uuid'],  # use uuid initially for uniqueness
                 connectDate=now,
                 local=False,
-                uuid=metadata['uuid']
+                uuid=metadata['uuid'],
             )
 
             db.session.add(camera)
@@ -160,6 +175,7 @@ class miscDb(object):
             'file_size',
             'web_nonlocal_images',
             'web_local_images_admin',
+            'data',  # manually handle data
         ]
 
         # populate camera info
@@ -168,6 +184,19 @@ class miscDb(object):
                 continue
 
             setattr(camera, k, v)
+
+
+        if camera.data:
+            camera_data = dict(camera.data)
+        else:
+            camera_data = dict()
+
+
+        # update entries
+        for k, v in metadata.get('data', {}).items():
+            camera_data[k] = v
+
+        camera.data = camera_data
 
 
         db.session.commit()
@@ -224,13 +253,6 @@ class miscDb(object):
             dayDate = metadata['dayDate']
 
 
-        # If temp is 0, write null
-        if metadata['temp']:
-            temp_val = float(metadata['temp'])
-        else:
-            temp_val = None
-
-
         moonmode_val = bool(metadata['moonmode'])
 
         night_val = bool(metadata['night'])  # integer to boolean
@@ -249,7 +271,7 @@ class miscDb(object):
             exp_elapsed=metadata['exp_elapsed'],
             gain=metadata['gain'],
             binmode=metadata['binmode'],
-            temp=temp_val,
+            temp=metadata['temp'],
             calibrated=metadata['calibrated'],
             night=night_val,
             adu=metadata['adu'],
@@ -444,6 +466,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             dayDate_year=dayDate.year,
             dayDate_month=dayDate.month,
@@ -524,6 +547,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             dayDate_year=dayDate.year,
             dayDate_month=dayDate.month,
@@ -587,6 +611,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             night=metadata['night'],
             framerate=float(metadata.get('framerate', 0.0)),
@@ -643,6 +668,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             night=metadata['night'],
             frames=metadata.get('frames', 0),
@@ -699,6 +725,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             night=metadata['night'],
             frames=metadata.get('frames', 0),
@@ -754,6 +781,7 @@ class miscDb(object):
             createDate=createDate,
             camera_id=camera_id,
             filename=str(filename_p),
+            success=metadata.get('success', False),  # original default was true
             dayDate=dayDate,
             night=metadata['night'],
             framerate=float(metadata.get('framerate', 0.0)),
@@ -811,6 +839,10 @@ class miscDb(object):
             camera_id=camera_id,
             filename=str(filename_p),
             createDate=createDate,
+            createDate_year=createDate.year,
+            createDate_month=createDate.month,
+            createDate_day=createDate.day,
+            createDate_hour=createDate.hour,
             exposure=metadata['exposure'],
             gain=metadata['gain'],
             binmode=metadata['binmode'],
@@ -869,6 +901,10 @@ class miscDb(object):
             camera_id=camera_id,
             filename=str(filename_p),
             createDate=createDate,
+            createDate_year=createDate.year,
+            createDate_month=createDate.month,
+            createDate_day=createDate.day,
+            createDate_hour=createDate.hour,
             exposure=metadata['exposure'],
             gain=metadata['gain'],
             binmode=metadata['binmode'],
@@ -1265,4 +1301,49 @@ class miscDb(object):
         db.session.commit()
 
         return thumbnail_entry
+
+
+
+    def add_long_term_keogram_data(self, exp_date, camera_id, rgb_pixel_list):
+
+        if isinstance(exp_date, (int, float)):
+            ts = exp_date
+        else:
+            # timestamps are UTC
+            ts = exp_date.timestamp()
+
+
+        # data is probably numpy types
+        r1, g1, b1 = rgb_pixel_list[0]
+        r2, g2, b2 = rgb_pixel_list[1]
+        r3, g3, b3 = rgb_pixel_list[2]
+        r4, g4, b4 = rgb_pixel_list[3]
+        r5, g5, b5 = rgb_pixel_list[4]
+
+        #logger.info('r1: %s, g1: %s, b1: %s', type(r1), type(g1), type(b1))
+        #logger.info('r1: %d, g1: %d, b1: %d', r1, g1, b1)
+
+        keogram_entry = IndiAllSkyDbLongTermKeogramTable(
+            ts=int(ts),
+            camera_id=camera_id,
+            r1=int(r1),  # 1
+            g1=int(g1),
+            b1=int(b1),
+            r2=int(r2),  # 2
+            g2=int(g2),
+            b2=int(b2),
+            r3=int(r3),  # 3
+            g3=int(g3),
+            b3=int(b3),
+            r4=int(r4),  # 4
+            g4=int(g4),
+            b4=int(b4),
+            r5=int(r5),  # 5
+            g5=int(g5),
+            b5=int(b5),
+        )
+        db.session.add(keogram_entry)
+        db.session.commit()
+
+        return keogram_entry
 

@@ -17,6 +17,8 @@ var camera_id = {{ camera_id }};
 var icd = {
     'zwo_f2.0_2.1mm_1-3' :          6.7,
     'zwo_f1.2_2.5mm_1-2' :          6.7,
+    'fe185c046ha_f1.4_1.4mm_1-2' :  4.6,
+    'fe185c057ha_f1.4_1.8mm_2-3' :  5.7,
     'arecont_f2.0_1.55mm_1-2' :     4.8,
     'stardot_f1.5_1.55mm_1-2' :     4.8,
     'm12_f2.1_0.76mm_1-3.2' :       2.77,
@@ -28,9 +30,13 @@ var icd = {
     'm12_f2.0_1.8mm_1-2.5' :        6.9,
     'm12_f2.0_1.85mm_1-1.8' :       5.8,
     'm12_f2.0_2.1mm_1-2.7' :        6.7,
+    'fe185c086ha_f1.8_2.7mm_1' :    8.6,
     'vm2.8ir10mp_f1.6_2.8mm_1-1.8': 9.0,
     'meike_f2.8_3.5mm_4-3' :        12.5,
     'custom_f7_5.8mm_m42' :         17.3,
+    '7artisans_f2.8_4.0mm_4-3' :    12.37,
+    'laowa_f2.8_4.0mm_4-3' :        13.4,
+    'cs-2.5ir_8mp_-f_f1.6_2.5mm_2-3' : 6.4,
 }
 
 //   '64mphawkeye_f1.8_5.1mm_1-1.7' : 0.0,
@@ -94,6 +100,11 @@ var sd = {
         'p' : 4,
     },
     'imx224' : {
+        'w' : 1304,
+        'h' : 976,
+        'p' : 3.75,
+    },
+    'imx225' : {
         'w' : 1304,
         'h' : 976,
         'p' : 3.75,
@@ -557,7 +568,7 @@ function setResizeHandler(callback, timeout) {
 function resize_callback() {
     show_simulation();
 }
-setResizeHandler(resize_callback, 500);
+setResizeHandler(resize_callback, 200);
 
 
 function init() {

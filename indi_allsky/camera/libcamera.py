@@ -134,10 +134,10 @@ class IndiClientLibCameraGeneric(IndiClient):
 
         if self.night_v.value:
             # night
-            image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'dng')
+            image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE', 'jpg')
         else:
             # day
-            image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'dng')
+            image_type = self.config.get('LIBCAMERA', {}).get('IMAGE_FILE_TYPE_DAY', 'jpg')
 
 
         if image_type == 'dng' and self.memory_total_mb <= 768:
@@ -1026,6 +1026,30 @@ class IndiClientLibCameraImx283(IndiClientLibCameraGeneric):
             'max_gain'      : 22,  # verified
             'min_exposure'  : 0.000058,
             'max_exposure'  : 129.0,
+            'cfa'           : 'RGGB',  # verified
+            'bit_depth'     : 16,
+        }
+
+        self._binmode_options = {
+            1 : '',
+        }
+
+
+class IndiClientLibCameraImx678(IndiClientLibCameraGeneric):
+
+    def __init__(self, *args, **kwargs):
+        super(IndiClientLibCameraImx678, self).__init__(*args, **kwargs)
+
+        self.ccd_device_name = 'libcamera_imx678'
+
+        self.camera_info = {
+            'width'         : 3840,
+            'height'        : 2160,
+            'pixel'         : 2.0,
+            'min_gain'      : 1,
+            'max_gain'      : 32,  # unverified
+            'min_exposure'  : 0.000032,
+            'max_exposure'  : 200.0,
             'cfa'           : 'RGGB',  # verified
             'bit_depth'     : 16,
         }
